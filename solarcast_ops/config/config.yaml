@@ -1,0 +1,72 @@
+project:
+  name: SolarCast Ops
+  random_seed: 42
+
+site:
+  name: Munich Demo Solar Plant
+  latitude: 48.14
+  longitude: 11.58
+  peak_power_mw: 1.0
+  tilt_deg: 30
+  azimuth_deg: 0
+  system_loss_percent: 14
+
+data:
+  start_year: 2019
+  end_year: 2023
+  timezone: UTC
+  cache_enabled: true
+  allow_synthetic_fallback: true
+  api_timeout_seconds: 30
+  pvgis_base_url: https://re.jrc.ec.europa.eu/api/v5_3/seriescalc
+  pvgis_radiation_database: PVGIS-SARAH3
+
+forecast:
+  horizons_hours: [1, 2, 3]
+  daylight_solar_elevation_threshold: 3
+  train_end: "2021-12-31 23:00:00"
+  validation_end: "2022-12-31 23:00:00"
+  test_end: "2023-12-31 23:00:00"
+
+irradiance_model:
+  enabled: true
+  model_family: horizon_conditioned_quantile_moe
+  implementation: pytorch_quantile_moe
+  future_horizons_minutes_reference: [15, 30, 60, 180, 360, 720, 1440]
+  active_horizons_hours: [1, 2, 3]
+  quantiles: [0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95]
+  clear_sky_model: ineichen
+  clear_sky_index_max: 1.5
+  diffuse_fraction_min: 0.0
+  diffuse_fraction_max: 1.0
+  minimum_cos_zenith: 0.08
+  poa_model: perez
+  albedo: 0.2
+  use_pytorch_if_available: true
+  torch_epochs: 20
+  torch_batch_size: 1024
+  torch_learning_rate: 0.001
+  torch_hidden_dim: 96
+  torch_dropout: 0.08
+  missing_modality_interval_multiplier:
+    satellite: 1.25
+    ground: 1.15
+    nwp: 1.35
+    all_missing: 2.0
+  adapters:
+    satellite: pvgis_hourly_proxy
+    ground: pvgis_modelled_pv_proxy
+    nwp: unavailable_demo_adapter
+
+decision:
+  minimum_trade_threshold_mwh: 0.03
+  confidence_factor: 0.7
+  ramp_threshold_fraction: 0.2
+  uncertainty_quantile_low: 0.1
+  uncertainty_quantile_high: 0.9
+
+market:
+  default_intraday_buy_price_eur_mwh: 90
+  default_intraday_sell_price_eur_mwh: 70
+  default_shortage_imbalance_price_eur_mwh: 150
+  default_surplus_imbalance_price_eur_mwh: 40

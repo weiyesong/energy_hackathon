@@ -1,0 +1,44 @@
+services:
+  irradiance:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: energy-hackathon/irradiance:latest
+    container_name: irradiance-lab
+    working_dir: /workspace
+    network_mode: "none"
+    stdin_open: true
+    tty: true
+    environment:
+      PYTHONPATH: /workspace/src
+      INPUT_DIR: /workspace/data/raw
+      PROCESSED_DIR: /workspace/data/processed
+      OUTPUT_DIR: /workspace/data/output
+    volumes:
+      - ./src:/workspace/src
+      - ./notebooks:/workspace/notebooks
+      - ./data/raw:/workspace/data/raw:ro
+      - ./data/processed:/workspace/data/processed
+      - ./data/output:/workspace/data/output
+
+  irradiance-net:
+    profiles: ["network"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: energy-hackathon/irradiance:latest
+    container_name: irradiance-lab-net
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+    environment:
+      PYTHONPATH: /workspace/src
+      INPUT_DIR: /workspace/data/raw
+      PROCESSED_DIR: /workspace/data/processed
+      OUTPUT_DIR: /workspace/data/output
+    volumes:
+      - ./src:/workspace/src
+      - ./notebooks:/workspace/notebooks
+      - ./data/raw:/workspace/data/raw:ro
+      - ./data/processed:/workspace/data/processed
+      - ./data/output:/workspace/data/output
