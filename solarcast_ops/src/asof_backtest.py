@@ -44,6 +44,9 @@ ASOF_FEATURES = [
     "beam_fraction",
     "cloud_opacity_proxy",
     "cloud_variability_proxy",
+    "cloud_trend_proxy",
+    "wind_advected_cloud_change_proxy",
+    "cloud_ramp_risk_proxy",
     "irradiance_lag_1h",
     "irradiance_lag_2h",
     "irradiance_lag_3h",
@@ -94,6 +97,15 @@ def _prepare_asof_frame(features_df: pd.DataFrame, horizons: list[int]) -> pd.Da
     data["weather_condition"] = classify_weather(data)
     data["cloud_opacity_proxy"] = (1.0 - pd.to_numeric(data["clear_sky_index"], errors="coerce")).clip(0, 1.5)
     data["cloud_variability_proxy"] = pd.to_numeric(data["irradiance_rolling_std_3h"], errors="coerce").fillna(0)
+    data["cloud_trend_proxy"] = -pd.to_numeric(data["clear_sky_index"], errors="coerce").diff().fillna(0)
+    data["wind_advected_cloud_change_proxy"] = (
+        pd.to_numeric(data["wind_speed_ms"], errors="coerce").fillna(0)
+        * pd.to_numeric(data["irradiance_change_1h"], errors="coerce").fillna(0).abs()
+    )
+    data["cloud_ramp_risk_proxy"] = (
+        data["cloud_opacity_proxy"].fillna(0) * data["cloud_variability_proxy"].fillna(0)
+        + 0.01 * data["wind_advected_cloud_change_proxy"].fillna(0)
+    )
 
     indexed = data.set_index("timestamp")
     for h in horizons:
@@ -249,6 +261,7 @@ def run_asof_backtest(
             csp = _clear_sky_persistence(current, h, peak)
             actual_power = float(current[f"target_power_h{h}"])
             actual_ghi = float(current[f"target_ghi_h{h}"])
+            valid_is_daylight = bool(actual_ghi > 20 or actual_power > 0.02)
             rows.append(
                 {
                     "case_name": case["name"],
@@ -269,10 +282,14 @@ def run_asof_backtest(
                     "actual_ghi_wm2": actual_ghi,
                     "pred_ghi_wm2": pred_ghi,
                     "ghi_absolute_error_wm2": abs(actual_ghi - pred_ghi),
+                    "valid_is_daylight": valid_is_daylight,
                     "current_ghi_wm2": float(current["global_irradiance_wm2"]),
                     "current_clear_sky_index": float(current["clear_sky_index"]),
                     "cloud_opacity_proxy": float(current["cloud_opacity_proxy"]),
                     "cloud_variability_proxy": float(current["cloud_variability_proxy"]),
+                    "cloud_trend_proxy": float(current["cloud_trend_proxy"]),
+                    "wind_advected_cloud_change_proxy": float(current["wind_advected_cloud_change_proxy"]),
+                    "cloud_ramp_risk_proxy": float(current["cloud_ramp_risk_proxy"]),
                     "diffuse_fraction": float(current["diffuse_fraction"]),
                     "beam_fraction": float(current["beam_fraction"]),
                     "wind_speed_ms": float(current["wind_speed_ms"]),
@@ -289,7 +306,15 @@ def run_asof_backtest(
     if predictions.empty:
         raise ValueError("As-of backtest produced no predictions")
     metric_rows = []
-    for h, subset in predictions.groupby("horizon_h"):
+    for (h, segment), subset in pd.concat(
+        [
+            predictions.assign(segment="all"),
+            predictions[predictions["valid_is_daylight"].astype(bool)].assign(segment="daylight"),
+        ],
+        ignore_index=True,
+    ).groupby(["horizon_h", "segment"]):
+        if subset.empty:
+            continue
         mae = mean_absolute_error(subset["actual_power_mw"], subset["pred_power_mw"])
         rmse = float(np.sqrt(mean_squared_error(subset["actual_power_mw"], subset["pred_power_mw"])))
         mae_p = mean_absolute_error(subset["actual_power_mw"], subset["pred_persistence_mw"])
@@ -298,6 +323,7 @@ def run_asof_backtest(
         metric_rows.append(
             {
                 "horizon_h": int(h),
+                "segment": segment,
                 "cases": int(len(subset)),
                 "mae_mw": float(mae),
                 "rmse_mw": rmse,
@@ -306,7 +332,7 @@ def run_asof_backtest(
                 "ghi_mae_wm2": float(ghi_mae),
             }
         )
-    metrics = pd.DataFrame(metric_rows).sort_values("horizon_h")
+    metrics = pd.DataFrame(metric_rows).sort_values(["segment", "horizon_h"])
     metadata = {
         "method": "strict_asof_backtest",
         "policy": "For horizon h, training labels must satisfy sample_timestamp + h <= asof_time.",
@@ -325,6 +351,7 @@ def run_asof_backtest(
             "clear_sky_index as cloud opacity proxy",
             "diffuse_fraction and beam_fraction as cloud/sky-condition proxies",
             "irradiance rolling variability and ramp as cloud-motion proxy",
+            "cloud trend and wind-advected irradiance-change proxies",
             "wind_speed_ms and air_temperature_c as meteorological context",
         ],
     }

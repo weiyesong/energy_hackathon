@@ -1,0 +1,70 @@
+{
+  "primary_satellite_source": "unavailable",
+  "weather_forecast_source": "openmeteo",
+  "satellite_data_available": false,
+  "fallback_active": true,
+  "nasa_power_context_available": true,
+  "data_freshness_minutes": 75.98022435,
+  "data_quality_level": "fallback",
+  "source_resolution_minutes": 60,
+  "high_frequency_horizons": {
+    "15": {
+      "horizon_minutes": 15,
+      "operational": false,
+      "status": "Not operationally available",
+      "reason": "High-frequency satellite input required",
+      "trained_models_exist": false,
+      "source_resolution_minutes": 60
+    },
+    "30": {
+      "horizon_minutes": 30,
+      "operational": false,
+      "status": "Not operationally available",
+      "reason": "High-frequency satellite input required",
+      "trained_models_exist": false,
+      "source_resolution_minutes": 60
+    }
+  },
+  "sources": [
+    {
+      "source_name": "eumetsat_ssi",
+      "source_role": "primary operational satellite-derived irradiance source",
+      "status": "unavailable",
+      "last_update": "2026-06-13T05:54:14.801278+00:00",
+      "temporal_resolution": null,
+      "coverage": {},
+      "manual_action_required": true,
+      "fallback_active": false,
+      "error_message": "credentials missing; manual download required"
+    },
+    {
+      "source_name": "nasa_power",
+      "source_role": "satellite/model-derived historical solar baseline",
+      "status": "available",
+      "last_update": "2026-06-13T05:49:49.656576+00:00",
+      "temporal_resolution": "hourly",
+      "coverage": {
+        "end": "2025-12-31",
+        "start": "2023-01-01"
+      },
+      "manual_action_required": false,
+      "fallback_active": true,
+      "error_message": null
+    },
+    {
+      "source_name": "openmeteo",
+      "source_role": "weather forecast and fallback irradiance source",
+      "status": "available",
+      "last_update": "2026-06-13T05:41:40.260471+00:00",
+      "temporal_resolution": "hourly",
+      "coverage": {
+        "end": "2025-12-31 23:00:00+01:00",
+        "start": "2023-01-01 00:00:00+01:00"
+      },
+      "manual_action_required": false,
+      "fallback_active": true,
+      "error_message": null
+    }
+  ],
+  "inspected_at": "2026-06-13T06:57:39.073941+00:00"
+}

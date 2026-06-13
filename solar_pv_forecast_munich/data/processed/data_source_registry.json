@@ -1,0 +1,92 @@
+{
+  "eumetsat_ssi": {
+    "available_columns": [],
+    "date_range": {},
+    "download_status": "unavailable",
+    "error_message": "credentials missing; manual download required",
+    "file_path": "data/manual/eumetsat",
+    "is_satellite_derived": true,
+    "last_update_time": "2026-06-13T05:54:14.801278+00:00",
+    "manual_action_required": true,
+    "source_name": "eumetsat_ssi",
+    "source_type": "primary operational satellite-derived irradiance source",
+    "temporal_resolution": null
+  },
+  "nasa_power": {
+    "available_columns": [
+      "timestamp",
+      "latitude",
+      "longitude",
+      "site_id",
+      "source_name",
+      "source_type",
+      "is_satellite_derived",
+      "satellite_ssi",
+      "satellite_clear_sky_ssi",
+      "satellite_clear_sky_index",
+      "satellite_cloud_index",
+      "ghi_observed",
+      "dni_observed",
+      "dhi_observed",
+      "cloud_cover",
+      "cloud_cover_low",
+      "cloud_cover_mid",
+      "cloud_cover_high",
+      "temperature_2m",
+      "relative_humidity_2m",
+      "surface_pressure",
+      "wind_speed_10m",
+      "precipitation",
+      "snow_depth",
+      "quality_flag"
+    ],
+    "date_range": {
+      "end": "2025-12-31",
+      "start": "2023-01-01"
+    },
+    "download_status": "available",
+    "error_message": null,
+    "file_path": "data/processed/nasa_power_all_sites.parquet",
+    "is_satellite_derived": true,
+    "last_update_time": "2026-06-13T05:49:49.656576+00:00",
+    "manual_action_required": false,
+    "source_name": "nasa_power",
+    "source_type": "satellite/model-derived historical solar baseline",
+    "temporal_resolution": "hourly"
+  },
+  "openmeteo": {
+    "available_columns": [
+      "timestamp",
+      "shortwave_radiation",
+      "direct_radiation",
+      "diffuse_radiation",
+      "direct_normal_irradiance",
+      "cloud_cover",
+      "cloud_cover_low",
+      "cloud_cover_mid",
+      "cloud_cover_high",
+      "temperature_2m",
+      "relative_humidity_2m",
+      "precipitation",
+      "pressure_msl",
+      "surface_pressure",
+      "wind_speed_10m",
+      "wind_direction_10m",
+      "snow_depth",
+      "is_day"
+    ],
+    "date_range": {
+      "end": "2025-12-31 23:00:00+01:00",
+      "start": "2023-01-01 00:00:00+01:00"
+    },
+    "download_status": "available",
+    "error_message": null,
+    "file_path": "data/raw/openmeteo_historical_munich.csv",
+    "is_satellite_derived": false,
+    "last_update_time": "2026-06-13T05:41:40.260471+00:00",
+    "manual_action_required": false,
+    "source_name": "openmeteo",
+    "source_type": "weather forecast and fallback irradiance source",
+    "temporal_resolution": "hourly"
+  }
+}

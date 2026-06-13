@@ -1,0 +1,28 @@
+{
+  "demo_mode": true,
+  "display_mode": "Demo Snapshot",
+  "source": "outputs/forecasts/operational_forecast.csv",
+  "rows": 600,
+  "sites": [
+    "munich_centre",
+    "munich_east",
+    "munich_north",
+    "munich_south",
+    "munich_west"
+  ],
+  "start_time": "2025-07-01 22:00:00+00:00",
+  "end_time": "2025-07-02 21:00:00+00:00",
+  "site_ranking_summary": {
+    "number_of_sites": 5,
+    "ranking_horizon_minutes": 60,
+    "top_site": "munich_east",
+    "ranking_method": "0.45*normalized_energy + 0.20*confidence_score + 0.15*data_quality_score - 0.10*cloud_risk - 0.10*volatility",
+    "notes": [
+      "expected_daily_energy is computed from the shortest available operational horizon to avoid mixing horizons",
+      "site_score is transparent and heuristic; it supports operations review rather than guaranteed financial outcomes"
+    ],
+    "demo_mode": true,
+    "display_mode": "Demo Snapshot"
+  },
+  "note": "Demo Snapshot uses cached real processed data and must not be described as live."
+}

@@ -1,0 +1,110 @@
+location:
+  name: Munich
+  latitude: 48.137
+  longitude: 11.575
+  timezone: Europe/Berlin
+  altitude: 520
+
+product:
+  name: SolarOps
+  region_name: Munich
+  demo_mode: false
+
+data_sources:
+  satellite_priority:
+    - eumetsat_ssi
+    - nasa_power
+    - openmeteo
+  allow_fallback: true
+
+  eumetsat:
+    enabled: true
+    manual_directory: data/manual/eumetsat
+
+  eumetsat_variable_aliases:
+    satellite_ssi:
+      - ssi
+      - surface_solar_irradiance
+      - surface_downwelling_shortwave_flux
+    satellite_cloud_index:
+      - cloud_index
+      - effective_cloud_fraction
+    cloud_cover:
+      - cloud_fraction
+      - cloud_cover
+
+  nasa_power:
+    enabled: true
+
+  openmeteo:
+    enabled: true
+
+pv_system:
+  surface_tilt: 35
+  surface_azimuth: 180
+  capacity_kwp: 1.0
+  noct: 45
+  temperature_coefficient: -0.004
+  inverter_efficiency: 0.96
+  other_losses: 0.10
+  albedo_default: 0.2
+  albedo_snow: 0.7
+
+data_period:
+  train_start: 2023-01-01
+  train_end: 2024-12-31
+  validation_start: 2025-01-01
+  validation_end: 2025-12-31
+
+forecast_horizons_minutes:
+  - 15
+  - 30
+  - 60
+  - 180
+  - 360
+  - 720
+  - 1440
+
+forecast:
+  valid_horizons_minutes:
+    - 60
+    - 180
+    - 360
+    - 720
+    - 1440
+  high_frequency_horizons_minutes:
+    - 15
+    - 30
+
+benchmark:
+  use_clear_sky_persistence: true
+
+source_fusion:
+  alignment_tolerance_minutes: 35
+
+sites:
+  - id: munich_centre
+    name: Munich Centre
+    latitude: 48.137
+    longitude: 11.575
+    altitude: 520
+  - id: munich_north
+    name: Munich North
+    latitude: 48.220
+    longitude: 11.570
+    altitude: 500
+  - id: munich_east
+    name: Munich East
+    latitude: 48.135
+    longitude: 11.720
+    altitude: 520
+  - id: munich_south
+    name: Munich South
+    latitude: 48.050
+    longitude: 11.580
+    altitude: 560
+  - id: munich_west
+    name: Munich West
+    latitude: 48.140
+    longitude: 11.400
+    altitude: 530

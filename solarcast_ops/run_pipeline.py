@@ -14,6 +14,7 @@ from src.demo_selection import select_demo_cases
 from src.evaluate import evaluate_models
 from src.feature_engineering import build_features
 from src.irradiance_model import train_irradiance_model
+from src.munich_forecast import save_munich_operational_forecast
 from src.preprocessing import preprocess_data
 from src.train import train_models
 from src.uncertainty import build_prediction_intervals
@@ -80,6 +81,9 @@ def run(step: str, force: bool = False) -> None:
         features = _read(paths.processed_dir / "features.csv")
         run_asof_backtest(features, config)
 
+    if step in {"munich"}:
+        save_munich_operational_forecast(config)
+
     LOGGER.info("Pipeline step complete: %s", step)
 
 
@@ -87,7 +91,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="SolarCast Ops pipeline")
     parser.add_argument(
         "--step",
-        choices=["all", "download", "preprocess", "features", "baselines", "train", "irradiance", "evaluate", "demo", "asof"],
+        choices=["all", "download", "preprocess", "features", "baselines", "train", "irradiance", "evaluate", "demo", "asof", "munich"],
         default="all",
     )
     parser.add_argument("--force", action="store_true", help="Force refresh where supported")

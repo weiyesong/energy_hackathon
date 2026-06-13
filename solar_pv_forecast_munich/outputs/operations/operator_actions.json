@@ -1,0 +1,215 @@
+{
+  "actions": [
+    {
+      "site_id": "munich_centre",
+      "action_type": "battery_charge",
+      "priority": "high",
+      "valid_from": "2025-07-01T16:00:00+02:00",
+      "valid_until": "2025-07-01T17:00:00+02:00",
+      "reason": "Charge battery before expected PV drop of 32%",
+      "confidence": "medium",
+      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+    },
+    {
+      "site_id": "munich_centre",
+      "action_type": "battery_charge",
+      "priority": "high",
+      "valid_from": "2025-07-01T19:00:00+02:00",
+      "valid_until": "2025-07-01T20:00:00+02:00",
+      "reason": "Charge battery before expected PV drop of 44%",
+      "confidence": "medium",
+      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+    },
+    {
+      "site_id": "munich_centre",
+      "action_type": "monitor_forecast",
+      "priority": "medium",
+      "valid_from": "2025-07-01T07:00:00+02:00",
+      "valid_until": "2025-07-01T08:00:00+02:00",
+      "reason": "Monitor forecast because uncertainty is high",
+      "confidence": "medium",
+      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+    },
+    {
+      "site_id": "munich_centre",
+      "action_type": "preserve_battery",
+      "priority": "medium",
+      "valid_from": "2025-07-01T07:00:00+02:00",
+      "valid_until": "2025-07-01T08:00:00+02:00",
+      "reason": "Preserve battery during uncertain low-PV period",
+      "confidence": "medium",
+      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+    },
+    {
+      "site_id": "munich_centre",
+      "action_type": "reduce_feed_in_commitment",
+      "priority": "medium",
+      "valid_from": "2025-07-01T08:00:00+02:00",
+      "valid_until": "2025-07-01T09:00:00+02:00",
+      "reason": "Reduce expected feed-in commitment because source disagreement is limiting PV output",
+      "confidence": "low",
+      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+    },
+    {
+      "site_id": "munich_east",
+      "action_type": "battery_charge",
+      "priority": "high",
+      "valid_from": "2025-07-01T17:00:00+02:00",
+      "valid_until": "2025-07-01T18:00:00+02:00",
+      "reason": "Charge battery before expected PV drop of 33%",
+      "confidence": "medium",
+      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+    },
+    {
+      "site_id": "munich_east",
+      "action_type": "battery_charge",
+      "priority": "high",
+      "valid_from": "2025-07-01T18:00:00+02:00",
+      "valid_until": "2025-07-01T19:00:00+02:00",
+      "reason": "Charge battery before expected PV drop of 39%",
+      "confidence": "medium",
+      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+    },
+    {
+      "site_id": "munich_east",
+      "action_type": "monitor_forecast",
+      "priority": "medium",
+      "valid_from": "2025-07-01T07:00:00+02:00",
+      "valid_until": "2025-07-01T08:00:00+02:00",
+      "reason": "Monitor forecast because uncertainty is high",
+      "confidence": "medium",
+      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+    },
+    {
+      "site_id": "munich_east",
+      "action_type": "preserve_battery",
+      "priority": "medium",
+      "valid_from": "2025-07-01T07:00:00+02:00",
+      "valid_until": "2025-07-01T08:00:00+02:00",
+      "reason": "Preserve battery during uncertain low-PV period",
+      "confidence": "medium",
+      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+    },
+    {
+      "site_id": "munich_north",
+      "action_type": "battery_charge",
+      "priority": "high",
+      "valid_from": "2025-07-01T17:00:00+02:00",
+      "valid_until": "2025-07-01T18:00:00+02:00",
+      "reason": "Charge battery before expected PV drop of 32%",
+      "confidence": "medium",
+      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+    },
+    {
+      "site_id": "munich_north",
+      "action_type": "battery_charge",
+      "priority": "high",
+      "valid_from": "2025-07-01T18:00:00+02:00",
+      "valid_until": "2025-07-01T19:00:00+02:00",
+      "reason": "Charge battery before expected PV drop of 39%",
+      "confidence": "medium",
+      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+    },
+    {
+      "site_id": "munich_north",
+      "action_type": "monitor_forecast",
+      "priority": "medium",
+      "valid_from": "2025-07-01T07:00:00+02:00",
+      "valid_until": "2025-07-01T08:00:00+02:00",
+      "reason": "Monitor forecast because uncertainty is high",
+      "confidence": "medium",
+      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+    },
+    {
+      "site_id": "munich_north",
+      "action_type": "preserve_battery",
+      "priority": "medium",
+      "valid_from": "2025-07-01T07:00:00+02:00",
+      "valid_until": "2025-07-01T08:00:00+02:00",
+      "reason": "Preserve battery during uncertain low-PV period",
+      "confidence": "medium",
+      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+    },
+    {
+      "site_id": "munich_south",
+      "action_type": "battery_charge",
+      "priority": "high",
+      "valid_from": "2025-07-01T17:00:00+02:00",
+      "valid_until": "2025-07-01T18:00:00+02:00",
+      "reason": "Charge battery before expected PV drop of 33%",
+      "confidence": "medium",
+      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+    },
+    {
+      "site_id": "munich_south",
+      "action_type": "battery_charge",
+      "priority": "high",
+      "valid_from": "2025-07-01T18:00:00+02:00",
+      "valid_until": "2025-07-01T19:00:00+02:00",
+      "reason": "Charge battery before expected PV drop of 39%",
+      "confidence": "medium",
+      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+    },
+    {
+      "site_id": "munich_south",
+      "action_type": "monitor_forecast",
+      "priority": "medium",
+      "valid_from": "2025-07-01T07:00:00+02:00",
+      "valid_until": "2025-07-01T08:00:00+02:00",
+      "reason": "Monitor forecast because uncertainty is high",
+      "confidence": "medium",
+      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+    },
+    {
+      "site_id": "munich_south",
+      "action_type": "preserve_battery",
+      "priority": "medium",
+      "valid_from": "2025-07-01T07:00:00+02:00",
+      "valid_until": "2025-07-01T08:00:00+02:00",
+      "reason": "Preserve battery during uncertain low-PV period",
+      "confidence": "medium",
+      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+    },
+    {
+      "site_id": "munich_west",
+      "action_type": "battery_charge",
+      "priority": "high",
+      "valid_from": "2025-07-01T17:00:00+02:00",
+      "valid_until": "2025-07-01T18:00:00+02:00",
+      "reason": "Charge battery before expected PV drop of 32%",
+      "confidence": "medium",
+      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+    },
+    {
+      "site_id": "munich_west",
+      "action_type": "battery_charge",
+      "priority": "high",
+      "valid_from": "2025-07-01T18:00:00+02:00",
+      "valid_until": "2025-07-01T19:00:00+02:00",
+      "reason": "Charge battery before expected PV drop of 39%",
+      "confidence": "medium",
+      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+    },
+    {
+      "site_id": "munich_west",
+      "action_type": "monitor_forecast",
+      "priority": "medium",
+      "valid_from": "2025-07-01T07:00:00+02:00",
+      "valid_until": "2025-07-01T08:00:00+02:00",
+      "reason": "Monitor forecast because uncertainty is high",
+      "confidence": "medium",
+      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+    },
+    {
+      "site_id": "munich_west",
+      "action_type": "preserve_battery",
+      "priority": "medium",
+      "valid_from": "2025-07-01T07:00:00+02:00",
+      "valid_until": "2025-07-01T08:00:00+02:00",
+      "reason": "Preserve battery during uncertain low-PV period",
+      "confidence": "medium",
+      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+    }
+  ],
+  "count": 21
+}

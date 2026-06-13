@@ -1,0 +1,29 @@
+{
+  "horizon_support": {
+    "15_minutes": {
+      "disabled": true,
+      "supported": false
+    },
+    "30_minutes": {
+      "disabled": true,
+      "supported": false
+    }
+  },
+  "missing_data_percentage": 0.0,
+  "number_of_sites": 5,
+  "rows": 131520,
+  "selected_primary_source": "nasa_power",
+  "source_coverage_percentage": {
+    "eumetsat_ssi": 0.0,
+    "nasa_power": 100.0,
+    "openmeteo": 20.0
+  },
+  "temporal_resolution": {
+    "alignment_tolerance_minutes": 35.0,
+    "by_source_minutes": {
+      "nasa_power": 60.0,
+      "openmeteo": 60.0
+    },
+    "selected_primary_source_minutes": 60.0
+  }
+}

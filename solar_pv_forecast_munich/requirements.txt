@@ -1,0 +1,15 @@
+pandas
+numpy
+requests
+pyyaml
+pvlib
+scikit-learn
+lightgbm
+matplotlib
+plotly
+pyarrow
+xarray
+netcdf4
+cfgrib
+fastapi
+uvicorn

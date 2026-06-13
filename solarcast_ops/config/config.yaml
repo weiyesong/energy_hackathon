@@ -4,17 +4,20 @@ project:
 
 site:
   name: Munich Demo Solar Plant
-  latitude: 48.14
-  longitude: 11.58
+  latitude: 48.137
+  longitude: 11.575
+  timezone: Europe/Berlin
+  altitude_m: 520
   peak_power_mw: 1.0
-  tilt_deg: 30
+  tilt_deg: 35
   azimuth_deg: 0
   system_loss_percent: 14
 
 data:
-  start_year: 2019
-  end_year: 2023
-  timezone: UTC
+  start_year: 2023
+  end_year: 2025
+  validation_start: "2026-01-01"
+  timezone: Europe/Berlin
   cache_enabled: true
   allow_synthetic_fallback: true
   api_timeout_seconds: 30
@@ -22,6 +25,7 @@ data:
   pvgis_radiation_database: PVGIS-SARAH3
 
 forecast:
+  horizons_minutes: [15, 30, 60, 180, 360, 720, 1440]
   horizons_hours: [1, 2, 3]
   daylight_solar_elevation_threshold: 3
   train_end: "2021-12-31 23:00:00"

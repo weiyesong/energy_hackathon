@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -363,6 +364,247 @@ def _live_forecast_figure(live: pd.DataFrame, selected_horizon: float, scheduled
     return fig
 
 
+def _cloud_proxy_map_figure(site: dict[str, Any], row: pd.Series, live: pd.DataFrame | None, horizon_hours: float) -> go.Figure:
+    """Map-like situation view using irradiance-derived cloud proxies available to the app."""
+    lat = float(site["latitude"])
+    lon = float(site["longitude"])
+    if live is not None and not live.empty:
+        selected = live.iloc[(live["horizon_hours"] - horizon_hours).abs().idxmin()]
+        ghi = float(selected.get("global_irradiance_wm2", 0.0) or 0.0)
+        direct = float(selected.get("direct_irradiance_wm2", 0.0) or 0.0)
+        diffuse = float(selected.get("diffuse_irradiance_wm2", 0.0) or 0.0)
+        wind = float(selected.get("wind_speed_ms", 0.0) or 0.0)
+    else:
+        ghi = float(row.get("global_irradiance_wm2", 0.0) or 0.0)
+        direct = 0.0
+        diffuse = 0.0
+        wind = float(row.get("wind_speed_ms", 0.0) or 0.0)
+    cloud_opacity = float(np.clip(1.0 - ghi / 900.0, 0.05, 0.95))
+    diffuse_share = float(np.clip(diffuse / max(ghi, 1.0), 0.05, 0.95)) if diffuse else cloud_opacity
+    drift = min(max(wind, 1.0), 18.0) * horizon_hours / 650.0
+    centers = [
+        (lat + 0.04 + drift * 0.2, lon - 0.10 + drift, "cloud mass"),
+        (lat - 0.03 + drift * 0.1, lon + 0.02 + drift * 0.8, "aerosol / haze proxy"),
+        (lat + 0.08, lon + 0.13 + drift * 1.1, "thin cloud edge"),
+    ]
+    sizes = [
+        95 + 95 * cloud_opacity,
+        60 + 90 * diffuse_share,
+        45 + 70 * abs(direct - diffuse) / max(ghi + 1.0, 1.0),
+    ]
+    opacities = [0.18 + 0.45 * cloud_opacity, 0.15 + 0.35 * diffuse_share, 0.18 + 0.25 * cloud_opacity]
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scattermap(
+            lat=[c[0] for c in centers],
+            lon=[c[1] for c in centers],
+            mode="markers",
+            marker=dict(
+                size=sizes,
+                color=["#6b7280", "#9ca3af", "#cbd5e1"],
+                opacity=opacities,
+            ),
+            text=[c[2] for c in centers],
+            hovertemplate="%{text}<extra></extra>",
+            name="Cloud proxy",
+        )
+    )
+    fig.add_trace(
+        go.Scattermap(
+            lat=[lat],
+            lon=[lon],
+            mode="markers+text",
+            marker=dict(size=16, color="#f97316"),
+            text=["PV plant"],
+            textposition="top center",
+            hovertemplate="Target PV plant<br>Lat %{lat:.2f}, Lon %{lon:.2f}<extra></extra>",
+            name="PV plant",
+        )
+    )
+    fig.update_layout(
+        map=dict(style="open-street-map", center=dict(lat=lat, lon=lon), zoom=7.2),
+        margin=dict(l=0, r=0, t=36, b=0),
+        height=470,
+        title=f"Satellite-Derived Cloud Proxy, +{horizon_hours:g}h",
+        legend=dict(orientation="h", y=0.01),
+    )
+    return fig
+
+
+def _brain_curve_figure(
+    live: pd.DataFrame | None,
+    row: pd.Series,
+    scheduled_power: float,
+    p50: float,
+    decision_time: pd.Timestamp,
+    horizon_hours: float,
+) -> go.Figure:
+    fig = go.Figure()
+    if live is not None and not live.empty:
+        plot = live.copy()
+        x = plot["timestamp"]
+        forecast = plot["forecast_p50_mw"]
+        schedule = plot["scheduled_power_mw"]
+        fig.add_trace(go.Scatter(x=x, y=schedule, mode="lines", line=dict(color="#6b7280", width=2, dash="dash"), name="Committed baseline schedule"))
+        fig.add_trace(go.Scatter(x=x, y=forecast, mode="lines", line=dict(color="#f97316", width=3), name="Satellite AI forecast"))
+        fig.add_trace(
+            go.Scatter(
+                x=[plot["timestamp"].iloc[0]],
+                y=[float(row["pv_power_mw"])],
+                mode="markers",
+                marker=dict(color="#2563eb", size=12),
+                name="Current monitored output",
+            )
+        )
+        for i in range(len(plot) - 1):
+            y0 = float(min(schedule.iloc[i], forecast.iloc[i]))
+            y1 = float(max(schedule.iloc[i], forecast.iloc[i]))
+            if abs(y1 - y0) < 1e-6:
+                continue
+            color = "rgba(220, 38, 38, 0.16)" if forecast.iloc[i] < schedule.iloc[i] else "rgba(22, 163, 74, 0.14)"
+            fig.add_shape(type="rect", x0=plot["timestamp"].iloc[i], x1=plot["timestamp"].iloc[i + 1], y0=y0, y1=y1, fillcolor=color, line_width=0)
+    else:
+        valid_time = decision_time + pd.Timedelta(hours=horizon_hours)
+        fig.add_trace(go.Scatter(x=[decision_time, valid_time], y=[row["pv_power_mw"], row["pv_power_mw"]], mode="lines+markers", line=dict(color="#2563eb", width=3), name="Actual to issue time"))
+        fig.add_trace(go.Scatter(x=[decision_time, valid_time], y=[scheduled_power, scheduled_power], mode="lines", line=dict(color="#6b7280", width=2, dash="dash"), name="Committed baseline schedule"))
+        fig.add_trace(go.Scatter(x=[decision_time, valid_time], y=[row["pv_power_mw"], p50], mode="lines+markers", line=dict(color="#f97316", width=3), name="Satellite AI forecast"))
+    fig.update_layout(
+        title="Baseline vs Satellite-Corrected Power Forecast",
+        yaxis_title="Power (MW)",
+        xaxis_title="Delivery time",
+        hovermode="x unified",
+        legend_orientation="h",
+        margin=dict(l=20, r=20, t=58, b=20),
+        height=305,
+    )
+    return fig
+
+
+def _horizon_label(hours: float) -> str:
+    if hours <= 0.25:
+        return "15 minutes"
+    if hours < 1:
+        return f"{int(round(hours * 60))} minutes"
+    if abs(hours - 1.0) < 1e-9:
+        return "60 minutes"
+    return f"{hours:g} hours"
+
+
+def _forecast_horizon_options(config: dict[str, Any]) -> list[tuple[int, str]]:
+    """Return configured discrete forecast horizons as minute values and display labels."""
+    minutes = config.get("forecast", {}).get("horizons_minutes", [15, 30, 60, 180, 360, 720, 1440])
+    options = sorted({int(value) for value in minutes if int(value) > 0})
+    return [(value, _horizon_label(value / 60.0)) for value in options]
+
+
+def _interpolate_horizon_value(
+    row: pd.Series,
+    stem: str,
+    selected_horizon: float,
+    available_horizons: list[int],
+    current_value: float | None = None,
+) -> float:
+    xs: list[float] = []
+    ys: list[float] = []
+    if current_value is not None and not pd.isna(current_value):
+        xs.append(0.0)
+        ys.append(float(current_value))
+    for h in sorted(available_horizons):
+        col = f"{stem}_h{h}"
+        if col in row and not pd.isna(row[col]):
+            xs.append(float(h))
+            ys.append(float(row[col]))
+    if not ys:
+        return float("nan")
+    order = np.argsort(xs)
+    ordered_x = np.asarray(xs, dtype=float)[order]
+    ordered_y = np.asarray(ys, dtype=float)[order]
+    return float(np.interp(float(selected_horizon), ordered_x, ordered_y))
+
+
+def _finite_or(value: Any, fallback: float) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return float(fallback)
+    return number if np.isfinite(number) else float(fallback)
+
+
+def _target_delivery_window(frame: pd.DataFrame, selected_horizon: float, delivery_duration: float) -> pd.DataFrame:
+    """Rows representing the selected delivery product, not the whole 0..horizon path."""
+    start_horizon = max(float(selected_horizon), 0.0)
+    duration = max(float(delivery_duration), 0.25)
+    end_horizon = min(start_horizon + duration, float(frame["horizon_hours"].max()))
+    if end_horizon <= start_horizon:
+        end_horizon = start_horizon
+    window = frame[(frame["horizon_hours"] >= start_horizon) & (frame["horizon_hours"] < end_horizon)].copy()
+    if window.empty:
+        window = frame.iloc[[(frame["horizon_hours"] - start_horizon).abs().idxmin()]].copy()
+    return window
+
+
+def _mean_finite(series: pd.Series, fallback: float) -> float:
+    values = pd.to_numeric(series, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
+    return float(values.mean()) if not values.empty else float(fallback)
+
+
+def _decision_window_from_live(
+    live: pd.DataFrame,
+    selected_horizon: float,
+    delivery_duration: float,
+    override_schedule: bool,
+    override_power: float,
+) -> tuple[float, float, float, float, float]:
+    selected = live.iloc[(live["horizon_hours"] - max(float(selected_horizon), 0.0)).abs().idxmin()]
+    fallback_forecast = _finite_or(selected.get("forecast_p50_mw"), 0.0)
+    fallback_schedule = _finite_or(selected.get("scheduled_power_mw"), fallback_forecast)
+    window = _target_delivery_window(live, selected_horizon, delivery_duration)
+    duration_hours = max(float(delivery_duration), 0.25)
+    scheduled = pd.Series(float(override_power), index=window.index) if override_schedule else window["scheduled_power_mw"].astype(float)
+    return (
+        _mean_finite(scheduled, fallback_schedule),
+        _mean_finite(window["forecast_p10_mw"], fallback_forecast),
+        _mean_finite(window["forecast_p50_mw"], fallback_forecast),
+        _mean_finite(window["forecast_p90_mw"], fallback_forecast),
+        duration_hours,
+    )
+
+
+def _decision_window_from_replay(
+    row: pd.Series,
+    schedule: pd.DataFrame,
+    selected_horizon: float,
+    delivery_duration: float,
+    available_horizons: list[int],
+    current_power: float,
+    override_schedule: bool,
+    override_power: float,
+) -> tuple[float, float, float, float, float]:
+    start_horizon = max(float(selected_horizon), 0.0)
+    duration_hours = max(float(delivery_duration), 0.25)
+    end_horizon = start_horizon + duration_hours
+    grid = np.arange(start_horizon, end_horizon, 0.25)
+    if grid.size == 0:
+        grid = np.asarray([start_horizon])
+    if override_schedule:
+        scheduled_power = float(override_power)
+    else:
+        schedule_window = schedule[(schedule["horizon_hours"] >= start_horizon) & (schedule["horizon_hours"] < end_horizon)]
+        if schedule_window.empty:
+            schedule_window = schedule.iloc[[(schedule["horizon_hours"] - start_horizon).abs().idxmin()]]
+        scheduled_power = _mean_finite(schedule_window["scheduled_power_mw"], current_power)
+    p10_values = [_interpolate_horizon_value(row, "forecast_p10", h, available_horizons, current_power) for h in grid]
+    p50_values = [_interpolate_horizon_value(row, "forecast_p50", h, available_horizons, current_power) for h in grid]
+    p90_values = [_interpolate_horizon_value(row, "forecast_p90", h, available_horizons, current_power) for h in grid]
+    return (
+        scheduled_power,
+        _mean_finite(pd.Series(p10_values), current_power),
+        _mean_finite(pd.Series(p50_values), current_power),
+        _mean_finite(pd.Series(p90_values), current_power),
+        duration_hours,
+    )
+
+
 def main() -> None:
     st.set_page_config(page_title="SolarCast Ops", layout="wide")
     st.markdown(
@@ -440,28 +682,49 @@ def main() -> None:
     portfolio_scale = float(portfolio_capacity_mw) / max(peak_power, 1e-6)
     operating_mode = st.sidebar.radio("Operating mode", ["Live 24h forecast", "Historical replay"], horizontal=False)
     schedule_model = st.sidebar.selectbox("Computed schedule model", ["Model A", "Model B", "Blend"], index=0)
-    decision_horizon = float(st.sidebar.slider("Decision horizon (hours)", min_value=0.0, max_value=24.0, value=12.0, step=0.25))
-    duration = st.sidebar.number_input("Delivery duration (hours)", min_value=0.25, max_value=24.0, value=1.0, step=0.25)
-    buy_price = st.sidebar.number_input("Buy price (EUR/MWh)", min_value=0.0, value=float(market["default_intraday_buy_price_eur_mwh"]))
-    sell_price = st.sidebar.number_input("Sell price (EUR/MWh)", min_value=0.0, value=float(market["default_intraday_sell_price_eur_mwh"]))
-    shortage_price = st.sidebar.number_input("Shortage imbalance price (EUR/MWh)", min_value=0.0, value=float(market["default_shortage_imbalance_price_eur_mwh"]))
-    surplus_price = st.sidebar.number_input("Surplus imbalance price (EUR/MWh)", min_value=0.0, value=float(market["default_surplus_imbalance_price_eur_mwh"]))
-    risk_mode = st.sidebar.selectbox("Risk mode", ["Balanced", "Conservative", "Aggressive"])
-    min_trade = st.sidebar.number_input(
-        "Minimum trade threshold (MWh)",
-        min_value=0.0,
-        value=float(decision_cfg["minimum_trade_threshold_mwh"]) * portfolio_scale,
-        step=max(0.25, portfolio_scale * 0.01),
+    horizon_options = _forecast_horizon_options(config)
+    horizon_labels = {minutes: label for minutes, label in horizon_options}
+    default_horizon_minutes = 60 if 60 in horizon_labels else horizon_options[0][0]
+    decision_horizon_minutes = int(
+        st.sidebar.selectbox(
+            "Forecast horizon",
+            options=[minutes for minutes, _ in horizon_options],
+            index=[minutes for minutes, _ in horizon_options].index(default_horizon_minutes),
+            format_func=lambda minutes: horizon_labels[int(minutes)],
+        )
     )
-    override_schedule = st.sidebar.checkbox("Override computed schedule")
-    override_power = st.sidebar.number_input(
-        "Operator schedule override (MW)",
-        min_value=0.0,
-        max_value=float(portfolio_capacity_mw) * 1.5,
-        value=float(portfolio_capacity_mw) * 0.65,
-        step=max(1.0, float(portfolio_capacity_mw) * 0.01),
-        disabled=not override_schedule,
-    )
+    decision_horizon = decision_horizon_minutes / 60.0
+    duration = float(st.sidebar.number_input("Delivery duration (hours)", min_value=0.25, max_value=4.0, value=1.0, step=0.25))
+    buy_price = float(market["default_intraday_buy_price_eur_mwh"])
+    sell_price = float(market["default_intraday_sell_price_eur_mwh"])
+    shortage_price = float(market["default_shortage_imbalance_price_eur_mwh"])
+    surplus_price = float(market["default_surplus_imbalance_price_eur_mwh"])
+    risk_mode = "Balanced"
+    min_trade = float(decision_cfg["minimum_trade_threshold_mwh"]) * portfolio_scale
+    override_schedule = False
+    override_power = float(portfolio_capacity_mw) * 0.65
+    with st.sidebar.expander("Market and operator inputs"):
+        st.caption("Imbalance energy is computed for the selected delivery window, not accumulated from now.")
+        buy_price = st.number_input("Buy price (EUR/MWh)", min_value=0.0, value=buy_price)
+        sell_price = st.number_input("Sell price (EUR/MWh)", min_value=0.0, value=sell_price)
+        shortage_price = st.number_input("Shortage imbalance price (EUR/MWh)", min_value=0.0, value=shortage_price)
+        surplus_price = st.number_input("Surplus imbalance price (EUR/MWh)", min_value=0.0, value=surplus_price)
+        risk_mode = st.selectbox("Risk mode", ["Balanced", "Conservative", "Aggressive"])
+        min_trade = st.number_input(
+            "Minimum trade threshold (MWh)",
+            min_value=0.0,
+            value=min_trade,
+            step=max(0.25, portfolio_scale * 0.01),
+        )
+        override_schedule = st.checkbox("Override computed schedule")
+        override_power = st.number_input(
+            "Operator schedule override (MW)",
+            min_value=0.0,
+            max_value=float(portfolio_capacity_mw) * 1.5,
+            value=override_power,
+            step=max(1.0, float(portfolio_capacity_mw) * 0.01),
+            disabled=not override_schedule,
+        )
 
     is_live_mode = operating_mode == "Live 24h forecast"
     live = None
@@ -486,26 +749,37 @@ def main() -> None:
         ]:
             if col in live:
                 live[col] = live[col] * portfolio_scale
+                live[col] = pd.to_numeric(live[col], errors="coerce").interpolate(limit_direction="both").ffill().bfill()
         selected_live = live.iloc[(live["horizon_hours"] - decision_horizon).abs().idxmin()]
-        scheduled_power = float(override_power) if override_schedule else float(selected_live["scheduled_power_mw"])
-        p10 = float(selected_live["forecast_p10_mw"])
-        p50 = float(selected_live["forecast_p50_mw"])
-        p90 = float(selected_live["forecast_p90_mw"])
-        current_power = float(live.iloc[0]["forecast_p50_mw"])
+        point_p50 = _finite_or(selected_live.get("forecast_p50_mw"), 0.0)
+        point_scheduled_power = float(override_power) if override_schedule else _finite_or(selected_live.get("scheduled_power_mw"), point_p50)
+        point_p10 = _finite_or(selected_live.get("forecast_p10_mw"), point_p50)
+        point_p90 = _finite_or(selected_live.get("forecast_p90_mw"), point_p50)
+        brain_scheduled_power = point_scheduled_power
+        brain_p50 = point_p50
+        scheduled_power, p10, p50, p90, duration = _decision_window_from_live(
+            live,
+            decision_horizon,
+            duration,
+            override_schedule,
+            override_power,
+        )
+        grid_p10, grid_p50, grid_p90 = point_p10, point_p50, point_p90
+        current_power = _finite_or(live.iloc[0].get("forecast_p50_mw"), point_p50)
         row = pd.Series(
             {
-                "timestamp": selected_live["timestamp"],
+                "timestamp": start_time,
                 "pv_power_mw": current_power,
                 "global_irradiance_wm2": selected_live.get("global_irradiance_wm2"),
                 "clear_sky_index": pd.NA,
                 "weather_condition": "live_forecast",
                 "data_source": live_meta.get("source", "live forecast"),
                 f"pred_persistence_h{horizon}": current_power,
-                f"satellite_informed_h{horizon}": p50,
+                f"satellite_informed_h{horizon}": point_p50,
                 f"target_h{horizon}": pd.NA,
-                f"forecast_p10_h{horizon}": p10,
-                f"forecast_p50_h{horizon}": p50,
-                f"forecast_p90_h{horizon}": p90,
+                f"forecast_p10_h{horizon}": point_p10,
+                f"forecast_p50_h{horizon}": point_p50,
+                f"forecast_p90_h{horizon}": point_p90,
                 "_signal_capacity_mw": portfolio_capacity_mw,
             }
         )
@@ -529,25 +803,46 @@ def main() -> None:
         )
         replay_ts = pd.Timestamp(selected.replace(" UTC", ""), tz="UTC")
         row = _row_at(preds, replay_ts).copy()
-        for col in [
-            "pv_power_mw",
-            f"pred_persistence_h{horizon}",
-            f"pred_clear_sky_persistence_h{horizon}",
-            f"history_only_h{horizon}",
-            f"satellite_informed_h{horizon}",
-            f"target_h{horizon}",
-            f"forecast_p10_h{horizon}",
-            f"forecast_p50_h{horizon}",
-            f"forecast_p90_h{horizon}",
-        ]:
+        scale_cols = ["pv_power_mw"]
+        for h in config["forecast"]["horizons_hours"]:
+            scale_cols.extend(
+                [
+                    f"pred_persistence_h{h}",
+                    f"pred_clear_sky_persistence_h{h}",
+                    f"history_only_h{h}",
+                    f"satellite_informed_h{h}",
+                    f"target_h{h}",
+                    f"forecast_p10_h{h}",
+                    f"forecast_p50_h{h}",
+                    f"forecast_p90_h{h}",
+                ]
+            )
+        for col in scale_cols:
             if col in row and not pd.isna(row[col]):
                 row[col] = float(row[col]) * portfolio_scale
         row["_signal_capacity_mw"] = portfolio_capacity_mw
-        p10, p50, p90 = [float(row[f"forecast_p{x}_h{horizon}"]) for x in [10, 50, 90]]
+        point_p10 = _interpolate_horizon_value(row, "forecast_p10", decision_horizon, config["forecast"]["horizons_hours"], float(row["pv_power_mw"]))
+        point_p50 = _interpolate_horizon_value(row, "forecast_p50", decision_horizon, config["forecast"]["horizons_hours"], float(row["pv_power_mw"]))
+        point_p90 = _interpolate_horizon_value(row, "forecast_p90", decision_horizon, config["forecast"]["horizons_hours"], float(row["pv_power_mw"]))
         schedule_result = build_next_24h_schedule(history, replay_ts, schedule_model=schedule_model)
         schedule_row = schedule_result.schedule.iloc[(schedule_result.schedule["horizon_hours"] - decision_horizon).abs().idxmin()]
-        scheduled_power = float(override_power) if override_schedule else float(schedule_row["scheduled_power_mw"]) * portfolio_scale
+        point_scheduled_power = float(override_power) if override_schedule else float(schedule_row["scheduled_power_mw"]) * portfolio_scale
+        brain_scheduled_power = point_scheduled_power
+        brain_p50 = point_p50
         current_power = float(row["pv_power_mw"])
+        scheduled_power, p10, p50, p90, duration = _decision_window_from_replay(
+            row,
+            schedule_result.schedule.assign(
+                scheduled_power_mw=schedule_result.schedule["scheduled_power_mw"] * portfolio_scale
+            ),
+            decision_horizon,
+            duration,
+            config["forecast"]["horizons_hours"],
+            current_power,
+            override_schedule,
+            override_power,
+        )
+        grid_p10, grid_p50, grid_p90 = point_p10, point_p50, point_p90
         if not bool(row.get("is_daylight", False)):
             warning_box("Selected replay time is night or low sun. Forecast and trading actions may be naturally near zero.")
         future_cols = [f"target_h{h}" for h in config["forecast"]["horizons_hours"]]
@@ -566,9 +861,9 @@ def main() -> None:
     )
     grid = assess_grid_risk(
         current_power,
-        p10,
-        p50,
-        p90,
+        grid_p10,
+        grid_p50,
+        grid_p90,
         float(portfolio_capacity_mw),
         display_horizon,
         float(decision_cfg["ramp_threshold_fraction"]),
@@ -600,6 +895,101 @@ def main() -> None:
 
     if is_synthetic:
         warning_box("Current run uses synthetic demo data fallback. It is not measured satellite data or real plant SCADA.")
+
+    st.markdown("### Solar Operations Command Center")
+    st.caption("From satellite-derived weather signal to generation forecast to market action.")
+    left, right = st.columns([0.43, 0.57], gap="large")
+    with left:
+        st.markdown("#### 1. Situation Awareness")
+        st.plotly_chart(_cloud_proxy_map_figure(site, row, live, decision_horizon), width="stretch")
+        map_status = pd.DataFrame(
+            [
+                {"Signal": "Remote sensing layer", "Value": str(row.get("data_source", data_source))},
+                {"Signal": "Satellite-derived irradiance", "Value": _fmt(row.get("global_irradiance_wm2"), "W/m²", 1)},
+                {"Signal": "Cloud proxy state", "Value": _weather_label(row.get("weather_condition"))},
+                {"Signal": "Target portfolio", "Value": _fmt(portfolio_capacity_mw, "MWp", 0)},
+            ]
+        )
+        st.dataframe(map_status, hide_index=True, width="stretch")
+        st.caption(
+            "The map visualizes cloud thickness and movement proxies derived from satellite irradiance, diffuse/direct radiation, and wind context. "
+            "It is not raw Google Earth imagery."
+        )
+
+    with right:
+        st.markdown("#### 2. Forecast Brain")
+        st.plotly_chart(_brain_curve_figure(live, row, brain_scheduled_power, brain_p50, pd.Timestamp(row["timestamp"]), decision_horizon), width="stretch")
+
+        st.markdown("#### 3. Trading Decision")
+        status = "Predicted generation is close to schedule."
+        if trading.action == "BUY":
+            status = f"Generation shortfall expected for the +{_horizon_label(decision_horizon)} delivery window."
+        elif trading.action == "SELL":
+            status = f"Generation surplus expected for the +{_horizon_label(decision_horizon)} delivery window."
+        action_text = "Hold position"
+        if trading.action in {"BUY", "SELL"}:
+            action_text = f"Place simulated limit {trading.action} order for {_fmt(trading.recommended_trade_mwh, 'MWh')}."
+        st.markdown(
+            f"""
+            <div class="operator-alert">
+                <div class="eyebrow">Operational output</div>
+                <div class="headline">{status}</div>
+                <div class="subcopy">{action_text}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.caption(f"Energy and cost values below are for a {_horizon_label(duration)} delivery product starting at +{_horizon_label(decision_horizon)}.")
+        d1, d2, d3 = st.columns(3)
+        d1.metric("Expected imbalance", _fmt(trading.expected_deviation_mwh, "MWh"))
+        d2.metric("No-action exposure", _fmt_eur(trading.estimated_cost_without_action_eur))
+        d3.metric("Avoided cost", _fmt_eur(max(0.0, trading.estimated_avoided_cost_eur)))
+        d4, d5, d6 = st.columns(3)
+        d4.metric("Action", trading.action)
+        d5.metric("Trade size", _fmt(trading.recommended_trade_mwh, "MWh"))
+        d6.metric("Reserve / flex", _fmt(reserve, "MW"))
+        if st.button("Simulate one-click order", type="primary", disabled=trading.action == "HOLD"):
+            st.success(f"Simulated {trading.action} order prepared for {_fmt(trading.recommended_trade_mwh, 'MWh')}.")
+
+    with st.expander("Validation evidence: strict as-of backtest", expanded=False):
+        if asof is None or asof_metrics is None:
+            warning_box("As-of backtest output is missing. Run `python3 run_pipeline.py --step asof`.")
+        else:
+            daylight_asof_metrics = asof_metrics[asof_metrics.get("segment", "all").eq("daylight")] if "segment" in asof_metrics else asof_metrics
+            best_source = daylight_asof_metrics if not daylight_asof_metrics.empty else asof_metrics
+            best = best_source.sort_values("skill_vs_persistence", ascending=False).iloc[0]
+            v1, v2, v3, v4 = st.columns(4)
+            v1.metric("Replay cases", str(asof["case_name"].nunique()))
+            v2.metric("Horizons tested", str(asof["horizon_h"].nunique()))
+            v3.metric("Best daylight skill", _pct(best["skill_vs_persistence"]), f"+{int(best['horizon_h'])}h")
+            v4.metric("Leakage policy", "No future labels")
+            st.markdown(
+                "For horizon h, training labels are allowed only when `sample_timestamp + h <= issue_time`. "
+                "The model uses satellite-derived irradiance, cloud opacity/trend proxies, diffuse/direct radiation, wind, temperature, and history available at issue time."
+            )
+            metric_display = asof_metrics.copy()
+            metric_display["skill_vs_persistence"] = metric_display["skill_vs_persistence"].map(_pct)
+            metric_display["skill_vs_clear_sky_persistence"] = metric_display["skill_vs_clear_sky_persistence"].map(_pct)
+            metric_display["mae_mw"] = metric_display["mae_mw"].map(lambda v: _fmt(v, "MW"))
+            metric_display["rmse_mw"] = metric_display["rmse_mw"].map(lambda v: _fmt(v, "MW"))
+            metric_display["ghi_mae_wm2"] = metric_display["ghi_mae_wm2"].map(lambda v: _fmt(v, "W/m²", 1))
+            st.dataframe(metric_display, hide_index=True, width="stretch")
+
+    with st.expander("Data lineage and limitations", expanded=False):
+        st.markdown(
+            f"""
+            **Historical remote-sensing source:** PVGIS/SARAH-3 satellite-derived irradiance and modelled PV output.
+
+            **Live forecast source:** {live_meta.get("source", "not loaded in replay mode")}.
+
+            **What is real:** public satellite-derived GHI/DNI/DHI, forecast solar radiation API values, historical weather variables, model backtest actuals from PVGIS output.
+
+            **What is derived:** cloud opacity/trend proxies, wind-advected cloud-change proxy, baseline schedule, satellite-corrected forecast, imbalance and trading recommendation.
+
+            **What remains simulated:** raw satellite cloud imagery, real plant SCADA, live order book execution, and the one-click trade button.
+            """
+        )
+    return
 
     tabs = st.tabs(
         [
@@ -836,17 +1226,19 @@ def main() -> None:
             warning_box("As-of backtest output is missing. Run `python3 run_pipeline.py --step asof`.")
         else:
             c = st.columns(4)
-            best = asof_metrics.sort_values("skill_vs_persistence", ascending=False).iloc[0]
+            daylight_asof_metrics = asof_metrics[asof_metrics.get("segment", "all").eq("daylight")] if "segment" in asof_metrics else asof_metrics
+            best_source = daylight_asof_metrics if not daylight_asof_metrics.empty else asof_metrics
+            best = best_source.sort_values("skill_vs_persistence", ascending=False).iloc[0]
             c[0].metric("Replay cases", str(asof["case_name"].nunique()))
             c[1].metric("Horizons tested", str(asof["horizon_h"].nunique()))
             c[2].metric("Best skill vs persistence", _pct(best["skill_vs_persistence"]), f"+{int(best['horizon_h'])}h")
-            c[3].metric("Policy", "No future labels")
+            c[3].metric("Metric segment", str(best.get("segment", "all")))
             st.markdown(
                 """
                 <div class="proof-strip">
                     <strong>As-of rule:</strong> for horizon h, a training label is allowed only when
                     sample_timestamp + h <= issue_time. The forecast row can use satellite-derived irradiance,
-                    cloud proxies, wind, temperature, and history available at the issue time.
+                    cloud opacity/trend proxies, wind-advected cloud-change proxies, temperature, and history available at the issue time.
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -881,9 +1273,13 @@ def main() -> None:
                 "actual_ghi_wm2",
                 "cloud_opacity_proxy",
                 "cloud_variability_proxy",
+                "cloud_trend_proxy",
+                "wind_advected_cloud_change_proxy",
+                "cloud_ramp_risk_proxy",
                 "diffuse_fraction",
                 "beam_fraction",
                 "wind_speed_ms",
+                "valid_is_daylight",
                 "weather_condition",
             ]
             st.dataframe(case_rows[detail_cols], hide_index=True, width="stretch")

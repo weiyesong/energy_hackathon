@@ -1,0 +1,55 @@
+{
+  "actions": [
+    {
+      "site_id": "munich_centre",
+      "action_type": "monitor_forecast",
+      "priority": "medium",
+      "valid_from": "2026-06-13T09:00:00+02:00",
+      "valid_until": "2026-06-13T10:00:00+02:00",
+      "reason": "Monitor forecast because uncertainty is high",
+      "confidence": "medium",
+      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+    },
+    {
+      "site_id": "munich_east",
+      "action_type": "monitor_forecast",
+      "priority": "medium",
+      "valid_from": "2026-06-13T09:00:00+02:00",
+      "valid_until": "2026-06-13T10:00:00+02:00",
+      "reason": "Monitor forecast because uncertainty is high",
+      "confidence": "medium",
+      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+    },
+    {
+      "site_id": "munich_north",
+      "action_type": "monitor_forecast",
+      "priority": "medium",
+      "valid_from": "2026-06-13T09:00:00+02:00",
+      "valid_until": "2026-06-13T10:00:00+02:00",
+      "reason": "Monitor forecast because uncertainty is high",
+      "confidence": "medium",
+      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+    },
+    {
+      "site_id": "munich_south",
+      "action_type": "monitor_forecast",
+      "priority": "medium",
+      "valid_from": "2026-06-13T09:00:00+02:00",
+      "valid_until": "2026-06-13T10:00:00+02:00",
+      "reason": "Monitor forecast because uncertainty is high",
+      "confidence": "medium",
+      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+    },
+    {
+      "site_id": "munich_west",
+      "action_type": "monitor_forecast",
+      "priority": "medium",
+      "valid_from": "2026-06-13T09:00:00+02:00",
+      "valid_until": "2026-06-13T10:00:00+02:00",
+      "reason": "Monitor forecast because uncertainty is high",
+      "confidence": "medium",
+      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+    }
+  ],
+  "count": 5
+}

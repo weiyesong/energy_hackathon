@@ -4,8 +4,10 @@ import json
 import logging
 from pathlib import Path
 from typing import Any
+from urllib.parse import urljoin
 
 import pandas as pd
+import numpy as np
 import requests
 
 from src.config import get_paths
@@ -13,6 +15,46 @@ from src.synthetic_data import generate_synthetic_demo_data
 from src.utils import utc_now_iso, write_json
 
 LOGGER = logging.getLogger(__name__)
+
+OPENMETEO_HISTORICAL_URL = "https://archive-api.open-meteo.com/v1/archive"
+OPENMETEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+OPENMETEO_SATELLITE_URL = "https://satellite-api.open-meteo.com/v1/archive"
+PVGIS_SERIESCALC_URL = "https://re.jrc.ec.europa.eu/api/v5_3/seriescalc"
+DWD_CDC_BASE_URL = "https://opendata.dwd.de/climate_environment/CDC/observations_germany/climate/"
+
+OPENMETEO_HOURLY_VARIABLES = [
+    "shortwave_radiation",
+    "direct_radiation",
+    "diffuse_radiation",
+    "direct_normal_irradiance",
+    "global_tilted_irradiance",
+    "cloud_cover",
+    "cloud_cover_low",
+    "cloud_cover_mid",
+    "cloud_cover_high",
+    "temperature_2m",
+    "relative_humidity_2m",
+    "precipitation",
+    "pressure_msl",
+    "surface_pressure",
+    "wind_speed_10m",
+    "wind_direction_10m",
+    "snow_depth",
+    "is_day",
+]
+
+OPENMETEO_MINUTELY_15_VARIABLES = [
+    "shortwave_radiation",
+    "direct_radiation",
+    "diffuse_radiation",
+    "direct_normal_irradiance",
+    "global_tilted_irradiance",
+    "temperature_2m",
+    "relative_humidity_2m",
+    "wind_speed_10m",
+    "wind_direction_10m",
+    "is_day",
+]
 
 UNIFIED_COLUMNS = [
     "timestamp",
@@ -26,6 +68,338 @@ UNIFIED_COLUMNS = [
     "data_source",
     "is_synthetic",
 ]
+
+
+def _timeout(timeout_seconds: int | None = None) -> int:
+    return int(timeout_seconds or 30)
+
+
+def _write_csv(df: pd.DataFrame, path: Path) -> pd.DataFrame:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(path, index=False)
+    LOGGER.info("Saved %s rows to %s", len(df), path)
+    return df
+
+
+def _parse_openmeteo_time_block(payload: dict[str, Any], block_name: str) -> pd.DataFrame:
+    block = payload.get(block_name)
+    if not block or "time" not in block:
+        return pd.DataFrame()
+    df = pd.DataFrame(block)
+    df["timestamp"] = pd.to_datetime(df.pop("time"), utc=True, errors="coerce")
+    for col in df.columns:
+        if col != "timestamp":
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df.dropna(subset=["timestamp"]).sort_values("timestamp").reset_index(drop=True)
+
+
+def _request_openmeteo(
+    url: str,
+    lat: float,
+    lon: float,
+    variables: list[str],
+    start_date: str | None = None,
+    end_date: str | None = None,
+    block: str = "hourly",
+    extra_params: dict[str, Any] | None = None,
+    timeout_seconds: int | None = None,
+) -> pd.DataFrame:
+    params: dict[str, Any] = {
+        "latitude": lat,
+        "longitude": lon,
+        "timezone": "UTC",
+        block: ",".join(variables),
+    }
+    if start_date is not None:
+        params["start_date"] = start_date
+    if end_date is not None:
+        params["end_date"] = end_date
+    if extra_params:
+        params.update(extra_params)
+    response = requests.get(url, params=params, timeout=_timeout(timeout_seconds))
+    response.raise_for_status()
+    df = _parse_openmeteo_time_block(response.json(), block)
+    if df.empty:
+        raise ValueError(f"Open-Meteo response from {url} did not contain a non-empty {block} block")
+    return df
+
+
+def download_openmeteo_historical(lat: float, lon: float, start_date: str, end_date: str) -> pd.DataFrame:
+    """Download hourly Open-Meteo historical weather and radiation for Munich MVP training."""
+    df = _request_openmeteo(
+        OPENMETEO_HISTORICAL_URL,
+        lat,
+        lon,
+        OPENMETEO_HOURLY_VARIABLES,
+        start_date=start_date,
+        end_date=end_date,
+        block="hourly",
+    )
+    return _write_csv(df, get_paths().raw_dir / "openmeteo_historical_munich.csv")
+
+
+def download_openmeteo_forecast(lat: float, lon: float) -> pd.DataFrame:
+    """Download current Open-Meteo forecast, preferring native 15-minute solar variables when available."""
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "timezone": "UTC",
+        "forecast_days": 2,
+        "minutely_15": ",".join(OPENMETEO_MINUTELY_15_VARIABLES),
+        "hourly": ",".join(OPENMETEO_HOURLY_VARIABLES),
+        "tilt": 35,
+        "azimuth": 0,
+    }
+    response = requests.get(OPENMETEO_FORECAST_URL, params=params, timeout=_timeout())
+    response.raise_for_status()
+    payload = response.json()
+    minutely = _parse_openmeteo_time_block(payload, "minutely_15")
+    hourly = _parse_openmeteo_time_block(payload, "hourly")
+    source_resolution = "hourly"
+    if not minutely.empty:
+        df = minutely
+        source_resolution = "minutely_15_with_hourly_context"
+        if not hourly.empty:
+            hourly_context = hourly.set_index("timestamp").sort_index()
+            target_index = pd.DatetimeIndex(df["timestamp"])
+            hourly_context = hourly_context.reindex(hourly_context.index.union(target_index)).sort_index()
+            numeric_cols = hourly_context.select_dtypes(include=["number"]).columns
+            hourly_context[numeric_cols] = hourly_context[numeric_cols].interpolate(method="time").ffill().bfill()
+            hourly_context = hourly_context.reindex(target_index).reset_index(drop=True)
+            for col in hourly_context.columns:
+                if col not in df.columns or df[col].isna().all():
+                    df[col] = hourly_context[col].to_numpy()
+    else:
+        df = hourly
+    if df.empty:
+        raise ValueError("Open-Meteo forecast response did not contain minutely_15 or hourly data")
+    df["source_resolution"] = source_resolution
+    return _write_csv(df, get_paths().raw_dir / "openmeteo_forecast_munich.csv")
+
+
+def download_openmeteo_satellite_radiation(lat: float, lon: float, start_date: str, end_date: str) -> pd.DataFrame:
+    """Download Open-Meteo satellite radiation archive data where available."""
+    variables = [
+        "shortwave_radiation",
+        "direct_radiation",
+        "diffuse_radiation",
+        "direct_normal_irradiance",
+        "global_tilted_irradiance",
+        "shortwave_radiation_instant",
+        "direct_radiation_instant",
+        "diffuse_radiation_instant",
+        "direct_normal_irradiance_instant",
+        "global_tilted_irradiance_instant",
+        "is_day",
+    ]
+    df = _request_openmeteo(
+        OPENMETEO_SATELLITE_URL,
+        lat,
+        lon,
+        variables,
+        start_date=start_date,
+        end_date=end_date,
+        block="hourly",
+        extra_params={"tilt": 35, "azimuth": 0, "temporal_resolution": "native"},
+    )
+    return _write_csv(df, get_paths().raw_dir / "openmeteo_satellite_radiation_munich.csv")
+
+
+def download_pvgis_hourly(
+    lat: float,
+    lon: float,
+    start_year: int,
+    end_year: int,
+    peakpower: float = 1,
+    tilt: float = 35,
+    azimuth: float = 0,
+    loss: float = 14,
+) -> pd.DataFrame:
+    """Download PVGIS hourly radiation and 1 kWp PV baseline for Munich."""
+    params = {
+        "lat": lat,
+        "lon": lon,
+        "startyear": int(start_year),
+        "endyear": int(end_year),
+        "pvcalculation": 1,
+        "peakpower": float(peakpower),
+        "loss": float(loss),
+        "angle": float(tilt),
+        "aspect": float(azimuth),
+        "components": 1,
+        "outputformat": "json",
+        "browser": 0,
+    }
+    response = requests.get(PVGIS_SERIESCALC_URL, params=params, timeout=_timeout())
+    response.raise_for_status()
+    df = _parse_pvgis_response(response.json())
+    # Also expose the requested normalized kW/kWp baseline for downstream sanity checks.
+    df["pv_power_kw_per_kwp"] = df["pv_power_mw"] * 1000.0 / max(float(peakpower), 1e-9)
+    return _write_csv(df, get_paths().raw_dir / "pvgis_munich_hourly.csv")
+
+
+def _read_dwd_station_table(url: str) -> pd.DataFrame:
+    response = requests.get(url, timeout=_timeout())
+    response.raise_for_status()
+    rows = []
+    for line in response.text.splitlines():
+        parts = line.split()
+        if len(parts) < 7 or not parts[0].isdigit():
+            continue
+        try:
+            rows.append(
+                {
+                    "station_id": parts[0].zfill(5),
+                    "from_date": parts[1],
+                    "to_date": parts[2],
+                    "altitude_m": float(parts[3]),
+                    "latitude": float(parts[4]),
+                    "longitude": float(parts[5]),
+                    "station_name": " ".join(parts[6:]),
+                }
+            )
+        except ValueError:
+            continue
+    return pd.DataFrame(rows)
+
+
+def list_dwd_solar_stations() -> pd.DataFrame:
+    """List DWD hourly solar stations from the public CDC metadata table."""
+    url = urljoin(DWD_CDC_BASE_URL, "hourly/solar/ST_Stundenwerte_Beschreibung_Stationen.txt")
+    stations = _read_dwd_station_table(url)
+    if stations.empty:
+        raise RuntimeError(
+            "Could not parse DWD station metadata. Please manually download the DWD station radiation zip files "
+            "from the DWD CDC hourly/solar and 10_minutes/solar directories, then put them into data/manual/dwd/."
+        )
+    return stations
+
+
+def find_nearest_dwd_station(lat: float, lon: float) -> pd.Series:
+    """Find the nearest available DWD hourly solar station to a target coordinate."""
+    stations = list_dwd_solar_stations().copy()
+    lat_rad = pd.Series(stations["latitude"]).astype(float).map(lambda v: v * 3.141592653589793 / 180.0)
+    target_lat = float(lat) * 3.141592653589793 / 180.0
+    dlat = (stations["latitude"].astype(float) - float(lat)) * 111.32
+    dlon = (stations["longitude"].astype(float) - float(lon)) * 111.32 * pd.Series(np.cos((lat_rad + target_lat) / 2.0))
+    stations["distance_km"] = (dlat.pow(2) + dlon.pow(2)).pow(0.5)
+    preferred = ["Muenchen", "München", "Flughafen", "Hohenpeissenberg", "Hohenpeißenberg", "Augsburg"]
+    stations["preferred_rank"] = stations["station_name"].map(
+        lambda name: min([i for i, token in enumerate(preferred) if token.lower() in str(name).lower()] or [99])
+    )
+    return stations.sort_values(["preferred_rank", "distance_km"]).iloc[0]
+
+
+def _download_dwd_zip_listing(dataset_path: str, station_id: str, output_name: str) -> pd.DataFrame:
+    base = urljoin(DWD_CDC_BASE_URL, dataset_path)
+    listing = requests.get(base, timeout=_timeout())
+    listing.raise_for_status()
+    station_key = str(station_id).zfill(5)
+    matches = [
+        token.split('"')[0]
+        for token in listing.text.split('href="')[1:]
+        if station_key in token and token.split('"')[0].endswith(".zip")
+    ]
+    if not matches:
+        raise RuntimeError(
+            "Please manually download the DWD station radiation zip files from the DWD CDC hourly/solar "
+            "and 10_minutes/solar directories, then put them into data/manual/dwd/."
+        )
+    out = pd.DataFrame({"station_id": station_key, "source_url": [urljoin(base, matches[-1])]})
+    return _write_csv(out, get_paths().raw_dir / output_name)
+
+
+def download_dwd_hourly_solar(station_id: str) -> pd.DataFrame:
+    return _download_dwd_zip_listing("hourly/solar/recent/", station_id, f"dwd_hourly_solar_station_{str(station_id).zfill(5)}.csv")
+
+
+def download_dwd_10min_global_radiation(station_id: str) -> pd.DataFrame:
+    return _download_dwd_zip_listing(
+        "10_minutes/solar/recent/",
+        station_id,
+        f"dwd_10min_global_station_{str(station_id).zfill(5)}.csv",
+    )
+
+
+def download_dwd_10min_diffuse_radiation(station_id: str) -> pd.DataFrame:
+    return _download_dwd_zip_listing(
+        "10_minutes/solar/recent/",
+        station_id,
+        f"dwd_10min_diffuse_station_{str(station_id).zfill(5)}.csv",
+    )
+
+
+def download_era5_single_levels(lat_range: list[float], lon_range: list[float], start_date: str, end_date: str, variables: list[str]) -> Path:
+    """Download ERA5 through cdsapi when configured, otherwise raise the manual-download instruction."""
+    try:
+        import cdsapi  # type: ignore
+    except Exception as exc:
+        raise RuntimeError(
+            "ERA5 cannot be downloaded automatically because the Copernicus CDS API key is missing. "
+            "Please create a CDS account, accept the ERA5 licence, install cdsapi, configure ~/.cdsapirc, "
+            "then rerun the script. Alternatively, manually download ERA5 single-level NetCDF files and place them in data/manual/era5/."
+        ) from exc
+    target = get_paths().raw_dir / "era5_munich_2021_2025.nc"
+    client = cdsapi.Client()
+    start = pd.Timestamp(start_date)
+    end = pd.Timestamp(end_date)
+    client.retrieve(
+        "reanalysis-era5-single-levels",
+        {
+            "product_type": "reanalysis",
+            "variable": variables,
+            "year": [str(y) for y in range(start.year, end.year + 1)],
+            "month": [f"{m:02d}" for m in range(1, 13)],
+            "day": [f"{d:02d}" for d in range(1, 32)],
+            "time": [f"{h:02d}:00" for h in range(24)],
+            "area": [max(lat_range), min(lon_range), min(lat_range), max(lon_range)],
+            "format": "netcdf",
+        },
+        str(target),
+    )
+    return target
+
+
+def preprocess_era5_to_hourly_features() -> pd.DataFrame:
+    raise RuntimeError(
+        "ERA5 preprocessing requires a local NetCDF file in data/raw/era5_munich_2021_2025.nc or data/manual/era5/. "
+        "Radiation accumulations must be converted from J/m² to W/m² by dividing by the accumulation seconds."
+    )
+
+
+def download_cams_aerosol(lat_range: list[float], lon_range: list[float], start_date: str, end_date: str) -> Path:
+    raise RuntimeError(
+        "CAMS cannot be downloaded automatically because ADS/CDS API credentials are missing. "
+        "Please manually download CAMS aerosol and atmospheric composition data for Munich and place the NetCDF files in data/manual/cams/."
+    )
+
+
+def preprocess_cams_to_hourly_features() -> pd.DataFrame:
+    raise RuntimeError("CAMS preprocessing requires CAMS NetCDF files under data/raw/ or data/manual/cams/.")
+
+
+def download_eumetsat_met_ssi() -> Path:
+    raise RuntimeError(
+        "EUMETSAT data cannot be downloaded automatically without account/API access. Please manually download Meteosat Surface "
+        "Solar Irradiance and cloud mask products for the Munich region, ideally at 15-minute resolution, and place them under data/manual/eumetsat/."
+    )
+
+
+def download_eumetsat_cloud_mask() -> Path:
+    return download_eumetsat_met_ssi()
+
+
+def preprocess_satellite_to_munich_patch() -> pd.DataFrame:
+    raise RuntimeError("Satellite patch preprocessing requires manually downloaded EUMETSAT files under data/manual/eumetsat/.")
+
+
+def download_entsoe_solar_generation(start_date: str, end_date: str, api_key: str | None = None) -> pd.DataFrame:
+    if not api_key:
+        raise RuntimeError(
+            "ENTSO-E cannot be downloaded automatically because the API token is missing. Please register for an ENTSO-E "
+            "Transparency Platform API token, or manually export German solar generation data and place it in data/manual/entsoe/."
+        )
+    raise NotImplementedError("ENTSO-E API client wiring is pending; provide exported CSV under data/manual/entsoe/ for now.")
 
 
 def _pvgis_params(config: dict[str, Any]) -> dict[str, Any]:
