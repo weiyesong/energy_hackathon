@@ -42,11 +42,11 @@ ASOF_FEATURES = [
     "power_clear_sky_ratio",
     "diffuse_fraction",
     "beam_fraction",
-    "cloud_opacity_proxy",
-    "cloud_variability_proxy",
-    "cloud_trend_proxy",
-    "wind_advected_cloud_change_proxy",
-    "cloud_ramp_risk_proxy",
+    "cloud_opacity_signal",
+    "cloud_variability_signal",
+    "cloud_trend_signal",
+    "wind_advected_cloud_change_signal",
+    "cloud_ramp_risk_signal",
     "irradiance_lag_1h",
     "irradiance_lag_2h",
     "irradiance_lag_3h",
@@ -95,16 +95,16 @@ def _prepare_asof_frame(features_df: pd.DataFrame, horizons: list[int]) -> pd.Da
     data["timestamp"] = pd.to_datetime(data["timestamp"], utc=True)
     data = data.sort_values("timestamp").drop_duplicates("timestamp", keep="last").reset_index(drop=True)
     data["weather_condition"] = classify_weather(data)
-    data["cloud_opacity_proxy"] = (1.0 - pd.to_numeric(data["clear_sky_index"], errors="coerce")).clip(0, 1.5)
-    data["cloud_variability_proxy"] = pd.to_numeric(data["irradiance_rolling_std_3h"], errors="coerce").fillna(0)
-    data["cloud_trend_proxy"] = -pd.to_numeric(data["clear_sky_index"], errors="coerce").diff().fillna(0)
-    data["wind_advected_cloud_change_proxy"] = (
+    data["cloud_opacity_signal"] = (1.0 - pd.to_numeric(data["clear_sky_index"], errors="coerce")).clip(0, 1.5)
+    data["cloud_variability_signal"] = pd.to_numeric(data["irradiance_rolling_std_3h"], errors="coerce").fillna(0)
+    data["cloud_trend_signal"] = -pd.to_numeric(data["clear_sky_index"], errors="coerce").diff().fillna(0)
+    data["wind_advected_cloud_change_signal"] = (
         pd.to_numeric(data["wind_speed_ms"], errors="coerce").fillna(0)
         * pd.to_numeric(data["irradiance_change_1h"], errors="coerce").fillna(0).abs()
     )
-    data["cloud_ramp_risk_proxy"] = (
-        data["cloud_opacity_proxy"].fillna(0) * data["cloud_variability_proxy"].fillna(0)
-        + 0.01 * data["wind_advected_cloud_change_proxy"].fillna(0)
+    data["cloud_ramp_risk_signal"] = (
+        data["cloud_opacity_signal"].fillna(0) * data["cloud_variability_signal"].fillna(0)
+        + 0.01 * data["wind_advected_cloud_change_signal"].fillna(0)
     )
 
     indexed = data.set_index("timestamp")
@@ -285,11 +285,11 @@ def run_asof_backtest(
                     "valid_is_daylight": valid_is_daylight,
                     "current_ghi_wm2": float(current["global_irradiance_wm2"]),
                     "current_clear_sky_index": float(current["clear_sky_index"]),
-                    "cloud_opacity_proxy": float(current["cloud_opacity_proxy"]),
-                    "cloud_variability_proxy": float(current["cloud_variability_proxy"]),
-                    "cloud_trend_proxy": float(current["cloud_trend_proxy"]),
-                    "wind_advected_cloud_change_proxy": float(current["wind_advected_cloud_change_proxy"]),
-                    "cloud_ramp_risk_proxy": float(current["cloud_ramp_risk_proxy"]),
+                    "cloud_opacity_signal": float(current["cloud_opacity_signal"]),
+                    "cloud_variability_signal": float(current["cloud_variability_signal"]),
+                    "cloud_trend_signal": float(current["cloud_trend_signal"]),
+                    "wind_advected_cloud_change_signal": float(current["wind_advected_cloud_change_signal"]),
+                    "cloud_ramp_risk_signal": float(current["cloud_ramp_risk_signal"]),
                     "diffuse_fraction": float(current["diffuse_fraction"]),
                     "beam_fraction": float(current["beam_fraction"]),
                     "wind_speed_ms": float(current["wind_speed_ms"]),
@@ -348,11 +348,11 @@ def run_asof_backtest(
         ],
         "remote_sensing_proxies": [
             "Open-Meteo satellite archive GHI/direct/diffuse radiation when available",
-            "PVGIS/SARAH-3 satellite-derived irradiance fallback",
-            "clear_sky_index as cloud opacity proxy",
-            "diffuse_fraction and beam_fraction as cloud/sky-condition proxies",
-            "irradiance rolling variability and ramp as cloud-motion proxy",
-            "cloud trend and wind-advected irradiance-change proxies",
+            "PVGIS/SARAH-3 satellite-derived irradiance",
+            "clear_sky_index as cloud opacity signal",
+            "diffuse_fraction and beam_fraction as cloud/sky-condition signals",
+            "irradiance rolling variability and ramp as cloud-motion signal",
+            "cloud trend and wind-advected irradiance-change signals",
             "wind_speed_ms and air_temperature_c as meteorological context",
         ],
     }

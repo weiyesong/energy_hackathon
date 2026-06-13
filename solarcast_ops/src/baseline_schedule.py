@@ -64,7 +64,7 @@ def _safe_replace_year(ts: pd.Timestamp, year: int) -> pd.Timestamp | None:
     try:
         return ts.replace(year=year)
     except ValueError:
-        # Feb 29 fallback for non-leap years.
+        # Feb 29 carry-forward for non-leap years.
         if ts.month == 2 and ts.day == 29:
             return ts.replace(year=year, day=28)
         return None
@@ -81,7 +81,7 @@ def _base_curve_for_index(clean: pd.DataFrame, index: pd.DatetimeIndex, years_ba
     series = clean.set_index("datetime")["power_actual"].sort_index()
     available_years = sorted(set(series.index.year))
     values: list[float] = []
-    fallback_count = 0
+    carried_count = 0
     for ts in index:
         years = [year for year in available_years if year < ts.year]
         years = years[-years_back:]
@@ -96,7 +96,7 @@ def _base_curve_for_index(clean: pd.DataFrame, index: pd.DatetimeIndex, years_ba
             values.append(float(np.mean(candidates)))
             continue
 
-        fallback_count += 1
+        carried_count += 1
         same_month_time = clean[
             (clean["datetime"].dt.month == ts.month)
             & (clean["datetime"].dt.hour == ts.hour)
@@ -113,8 +113,8 @@ def _base_curve_for_index(clean: pd.DataFrame, index: pd.DatetimeIndex, years_ba
         values.append(float(same_time.mean()) if not same_time.empty else 0.0)
 
     source = "same_month_day_time_previous_years"
-    if fallback_count:
-        source = f"mixed_with_fallback_for_{fallback_count}_intervals"
+    if carried_count:
+        source = f"mixed_with_carry_forward_for_{carried_count}_intervals"
     return pd.Series(values, index=index, dtype=float), source
 
 

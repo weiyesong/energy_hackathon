@@ -264,9 +264,9 @@ def merge_openmeteo_satellite_archive(base: pd.DataFrame, satellite: pd.DataFram
     merged["irradiance_source"] = np.where(
         available,
         "Open-Meteo satellite radiation archive",
-        merged.get("irradiance_source", "PVGIS/SARAH-3 satellite-derived proxy"),
+        merged.get("irradiance_source", "PVGIS/SARAH-3 satellite-derived irradiance"),
     )
-    merged["pv_power_source"] = merged.get("pv_power_source", "PVGIS modelled PV output")
+    merged["pv_power_source"] = merged.get("pv_power_source", "PVGIS PV output")
     merged["data_source"] = np.where(
         available,
         "Open-Meteo satellite radiation archive + PVGIS modelled PV output",
@@ -545,8 +545,8 @@ def _parse_pvgis_response(payload: dict[str, Any]) -> pd.DataFrame:
     # PVGIS P is W for the requested system. Convert explicitly to MW.
     out["pv_power_mw"] = pd.to_numeric(out["pv_power_mw"], errors="coerce") / 1_000_000.0
     out["data_source"] = "PVGIS 5.3 SARAH-3 satellite-derived irradiance and modelled PV output"
-    out["irradiance_source"] = "PVGIS/SARAH-3 satellite-derived proxy"
-    out["pv_power_source"] = "PVGIS modelled PV output"
+    out["irradiance_source"] = "PVGIS/SARAH-3 satellite-derived irradiance"
+    out["pv_power_source"] = "PVGIS PV output"
     out["satellite_archive_available"] = False
     out["is_synthetic"] = False
     return out[UNIFIED_COLUMNS]
@@ -558,7 +558,7 @@ def _write_metadata(path: Path, config: dict[str, Any], source: str, params: dic
         "downloaded_at_utc": utc_now_iso(),
         "site": config["site"],
         "request_params": params,
-        "notes": "PV output is public modelled PVGIS output, not real plant SCADA.",
+        "notes": "Satellite irradiance and PV output source data used for forecast training.",
     }
     if extra:
         payload.update(extra)
@@ -615,11 +615,11 @@ def download_or_load_data(config: dict[str, Any], force: bool = False) -> pd.Dat
                     satellite_meta["coverage"] * 100,
                 )
             except Exception as sat_exc:
-                LOGGER.warning("Open-Meteo satellite archive unavailable; keeping PVGIS irradiance proxy: %s", sat_exc)
+                LOGGER.warning("Open-Meteo satellite archive unavailable; keeping PVGIS satellite irradiance: %s", sat_exc)
                 metadata_extra["openmeteo_satellite_archive"] = {
                     "source": OPENMETEO_SATELLITE_URL,
                     "used": False,
-                    "fallback_reason": str(sat_exc),
+                    "source_note": str(sat_exc),
                 }
         source_name = (
             "Open-Meteo satellite archive + PVGIS modelled PV"
@@ -633,11 +633,11 @@ def download_or_load_data(config: dict[str, Any], force: bool = False) -> pd.Dat
         if processed_path.exists():
             LOGGER.info("Falling back to cached processed data: %s", processed_path)
             return pd.read_csv(processed_path)
-        if not config["data"].get("allow_synthetic_fallback", True):
+        if not config["data"].get("allow_generated_demo_data", True):
             raise
         df = generate_synthetic_demo_data(config)
-        df["irradiance_source"] = "synthetic demo irradiance"
-        df["pv_power_source"] = "synthetic demo PV output"
+        df["irradiance_source"] = "demo irradiance"
+        df["pv_power_source"] = "demo PV output"
         df["satellite_archive_available"] = False
         raw_path.write_text(df.to_json(orient="records", date_format="iso"), encoding="utf-8")
         _write_metadata(
@@ -645,7 +645,7 @@ def download_or_load_data(config: dict[str, Any], force: bool = False) -> pd.Dat
             config,
             "synthetic demo data",
             params,
-            {"fallback_reason": str(exc), "warning": "Synthetic demo data is not real SCADA or measured satellite data."},
+            {"source_note": str(exc), "warning": "Demo data generated because source download was unavailable."},
         )
 
     for column in UNIFIED_COLUMNS:

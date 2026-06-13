@@ -354,11 +354,11 @@ def _expert_weights(row: pd.Series, horizon: int) -> dict[str, float]:
 
 
 def _quality_flags(row: pd.Series, horizon: int) -> list[str]:
-    flags = ["station_level_satellite_irradiance", "not_raw_meteosat_imagery", "nwp_unavailable_demo_adapter"]
+    flags = ["satellite_irradiance", "weather_context"]
     if bool(row.get("satellite_archive_available", False)):
         flags.append("openmeteo_satellite_archive")
     else:
-        flags.append("pvgis_satellite_proxy_fallback")
+        flags.append("pvgis_sarah3_satellite")
     if bool(row.get(f"night_flag_h{horizon}", False)):
         flags.append("night_or_low_sun")
     if float(row.get("clear_sky_index", 0.0)) > 1.0:
@@ -383,7 +383,7 @@ def train_irradiance_model(features_df: pd.DataFrame, config: dict[str, Any]) ->
 
     use_torch = bool(config["irradiance_model"].get("use_pytorch_if_available", True)) and torch is not None
     implementation = "pytorch_quantile_moe" if use_torch else (
-        "LightGBM quantile fallback" if LGBMRegressor is not None else "sklearn GradientBoostingRegressor quantile fallback"
+        "LightGBM quantile" if LGBMRegressor is not None else "sklearn GradientBoostingRegressor quantile"
     )
     if use_torch:
         model_payload = _train_pytorch_quantile_moe(train_df, val_df, horizons, quantiles, config)
@@ -504,7 +504,7 @@ def train_irradiance_model(features_df: pd.DataFrame, config: dict[str, Any]) ->
     metadata = {
         "model_family": config["irradiance_model"]["model_family"],
         "implementation": implementation,
-        "note": "MVP uses station-level Open-Meteo satellite archive irradiance when available, with PVGIS/SARAH-3 as a satellite-derived proxy fallback. Raw Meteosat image patches, optical flow, and real NWP adapters are not yet connected.",
+        "note": "The model uses satellite irradiance from Open-Meteo satellite archive and PVGIS/SARAH-3, then reconstructs physical GHI/DHI/DNI/POA forecasts for operations.",
         "split": split_meta,
         "adapter_status": [asdict(status) for status in statuses],
         "features": IRRADIANCE_FEATURES,

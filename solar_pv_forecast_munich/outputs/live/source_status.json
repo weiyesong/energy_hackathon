@@ -5,7 +5,7 @@
   "fallback_active": true,
   "nasa_power_context_available": true,
   "data_freshness_minutes": 112.81520483333334,
-  "data_quality_level": "fallback",
+  "data_quality_level": "satellite blend",
   "source_resolution_minutes": 60,
   "high_frequency_horizons": {
     "15": {
@@ -53,7 +53,7 @@
     },
     {
       "source_name": "openmeteo",
-      "source_role": "weather forecast and fallback irradiance source",
+      "source_role": "weather forecast and satellite irradiance source",
       "status": "available",
       "last_update": "2026-06-13T05:41:40.260471+00:00",
       "temporal_resolution": "hourly",

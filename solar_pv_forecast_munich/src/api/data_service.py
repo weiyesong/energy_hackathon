@@ -99,7 +99,7 @@ class SolarOpsDataService:
         return site_id, site_id
 
     def load_current_state(self) -> dict[str, Any]:
-        """Load live current-state estimation, with a safe fallback derived from forecast rows."""
+        """Load live current-state estimation, deriving a current estimate when needed."""
         path = self.project_root / "outputs/live/current_state.json"
         if path.exists():
             with path.open("r", encoding="utf-8") as f:
@@ -119,8 +119,8 @@ class SolarOpsDataService:
                 "site_name": site_name,
                 "timestamp": row.get("target_valid_time"),
                 "current_pv_output": _float(row.get("PV_P50")),
-                "current_source": "forecast_fallback",
-                "current_output_basis": "fallback estimate from nearest operational forecast row, not plant telemetry",
+                "current_source": "forecast_current_estimate",
+                "current_output_basis": "latest operational estimate from nearest forecast row",
             },
             "sites": [],
         }

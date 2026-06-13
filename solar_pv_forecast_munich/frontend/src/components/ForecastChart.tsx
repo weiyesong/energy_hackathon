@@ -1,5 +1,5 @@
 import type { ForecastPoint, OperatorAction, Overview } from '../types';
-import { formatKw, shortTime } from '../utils';
+import { formatPower, shortTime } from '../utils';
 
 type Props = {
   forecast: ForecastPoint[];
@@ -57,7 +57,7 @@ export function ForecastChart({ forecast, overview, action }: Props) {
           return (
             <g key={tick}>
               <line x1={pad.left} x2={width - pad.right} y1={yy} y2={yy} className="grid" />
-              <text x={pad.left - 10} y={yy + 4} className="axisText" textAnchor="end">{formatKw(maxY * tick)}</text>
+              <text x={pad.left - 10} y={yy + 4} className="axisText" textAnchor="end">{formatPower(maxY * tick)}</text>
             </g>
           );
         })}
@@ -93,7 +93,7 @@ export function ForecastChart({ forecast, overview, action }: Props) {
         ))}
       </svg>
       <div className="chartFooter">
-        <span>Next peak: {shortTime(overview.next_peak_time)} at {formatKw(overview.next_peak_power)}</span>
+        <span>Next peak: {shortTime(overview.next_peak_time)} at {formatPower(overview.next_peak_power)}</span>
         <span>High-risk windows are derived from cloud events and interval width.</span>
       </div>
     </section>

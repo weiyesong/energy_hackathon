@@ -1,69 +1,63 @@
 # Demo Video Script
 
-Target length: 3 minutes 30 seconds.
+Target length: 3 minutes.
 
-## 0:00-0:25 Problem
+## 0:00-0:25 What I Built
 
-Solar production is increasingly operational, not just analytical. Grid operators, battery controllers, and energy traders need to know how much PV power is coming, when it will change, how uncertain the forecast is, and whether the forecast is good enough to act on.
+This is SolarCast Ops, a satellite-driven operating system for short-term solar decisions.
 
-The hard part is clouds. A consumer weather forecast is not enough. For intraday solar decisions, the product needs satellite-derived irradiance, physics, machine learning, uncertainty, and clear benchmark evidence.
+for the Invertix OpenTrack challenge.
 
-## 0:25-1:10 Satellite Forecast Cockpit
+I will walk through those outputs directly.
 
-This is SolarOps for Munich. The first screen is an energy-operations cockpit, not a weather app.
+## 0:25-0:55 Satellite Data to Forecast
 
-In the sidebar we make two things explicit before we say anything else: the cockpit site and the active data source. In this demo the cockpit site is Munich Centre. The current PV output card is a near-real-time estimate from current Open-Meteo weather and irradiance. It is not plant telemetry.
+The first thing the operator sees is not a weather map. It is the decision state.
 
-At the top we show five KPI cards: current PV output for Munich Centre, the next expected peak, expected energy today, forecast risk, and skill versus persistence.
+At the top, the dashboard shows the recommended action, trade size, forecast skill versus persistence, skill versus clear-sky persistence, satellite data coverage, and the number of sites needing action.
 
-The main chart is for the cockpit site only. It shows the P50 PV forecast line, the calibrated P10-P90 uncertainty band, and the persistence baseline as a dashed line. We also mark cloud-front timing, the operator action point, and the high-risk window.
+The satellite feed provides GHI, direct irradiance, diffuse irradiance, cloud-state signals, wind, temperature, and solar geometry. 我通过复杂的物理建模 combines those with recent PV behavior to forecast power over the next operational horizons.值得注意的是，真实的PV数据目前是不公开的，所以PV数据（这里写数据怎么来的），但是只要接入真实的grid数据，这套系统就能立刻大展身手。
 
-On the right, the Munich map shows all configured PV sites, irradiance intensity, cloud-risk overlay, and cloud movement direction. The source pill names the active source. If EUMETSAT SSI is unavailable, the UI does not pretend it is active. It clearly shows the fallback source.
+So the raw question, "can satellite data become a usable output?", is answered immediately: yes, it becomes a PV forecast with uncertainty and an operator action.
 
-Below the map, the operator recommendation card translates the forecast into an operational decision window for the cockpit site.
+## 0:55-1:30 Beating Persistence
 
-## 1:10-1:50 Forecast vs Persistence
+The first worth-exploring requirement is a generation forecast that beats persistence.
 
-A solar forecast is only valuable if it beats a simple benchmark.
+Here, persistence means the simple baseline: assume the future looks like now. I tested against that baseline and also against clear-sky persistence.
 
-The KPI strip already shows skill versus persistence, and later in the Model and Data view we open the benchmark evidence in more detail.
+In the command center, the skill numbers are shown directly. Positive skill means the satellite-informed model reduces error compared with persistence.
 
-SolarOps compares the hybrid satellite-aware model against clear-sky-index persistence on the held-out test set. The benchmark panel reports offline hindcast RMSE and forecast skill.
+The Model Evaluation view gives the evidence behind that claim: MAE, RMSE, normalized error, and forecast skill by horizon and sky condition. This is important because the model is not just drawing a nice curve; it is benchmarked against the simplest thing an operator could do.
 
-The model is not predicting sunlight from scratch. It starts from solar geometry, clear-sky physics, and atmospheric correction, then learns the residual using satellite, cloud, weather, and source-disagreement features.
+## 1:30-2:05 Nowcast to Trading and Grid Balancing
 
-Positive skill means the model beats persistence for that horizon. If the result is not positive, the product does not claim it beats persistence.
+The second requirement is a nowcast that helps intraday trading or grid-balancing decisions.
 
-## 1:50-2:25 Operator Recommendation
+SolarCast converts the forecast into the language operators use: expected imbalance, no-action exposure, avoided cost, reserve or flexibility need, and the action to prepare.
 
-The forecast is converted into an operational suggestion.
+If the forecast is below schedule, the system prepares a BUY action. If generation is above schedule, it prepares a SELL action. If the deviation is too small, it holds.
 
-Here SolarOps identifies the expected event, its operational impact, a recommended action, confidence, and the valid time window. This card is designed to be narratable in one glance during the demo.
+For grid balancing, the same forecast becomes ramp direction, ramp magnitude, ramp risk, and reserve or downward-flexibility recommendations. The operator does not need to interpret satellite irradiance manually; the system turns it into the next operational move.
 
-Examples include monitoring a high-uncertainty period, preserving battery, charging before an expected PV drop, shifting flexible load into a high-solar window, or reducing expected feed-in commitment.
+## 2:05-2:35 Good vs Bad Sites
 
-These are operational recommendations, not guaranteed financial outcomes.
+The third requirement is to reveal good versus bad sites.
 
-## 2:25-2:55 Site Intelligence
+This table ranks the portfolio using the satellite-informed signal. Each site is scored by schedule deviation, ramp risk, forecasted power, trade action, and avoided cost.
 
-SolarOps also compares multiple Munich sites.
+Good sites are stable or close to schedule. Watch sites have meaningful uncertainty or emerging ramp risk. Bad or action-needed sites are the ones where the satellite forecast says the operator should intervene.
 
-In the Site Intelligence view we move from one cockpit site to the full Munich portfolio. Each site is scored using expected daily energy, peak output, uncertainty width, cloud risk, forecast volatility, and data quality.
+This turns satellite coverage into a prioritized work queue: which site is safe, which site needs monitoring, and which site needs action first.
 
-The site table and map make good-vs-bad site behavior visible. The comparison chart shows relative energy opportunity. The expandable explanation shows why a site received its grade, so the ranking is transparent rather than a black box.
+## 2:35-2:55 Operational Output
 
-## 2:55-3:20 Hybrid Architecture and Uncertainty
+The last requirement is any tool that takes satellite feeds and turns them into operational output.
 
-The Model and Data view shows the full pipeline:
+SolarCast does that end to end. Satellite irradiance becomes clear-sky index and cloud signals. Those become probabilistic GHI, DNI, DHI, and POA forecasts. Those become PV power forecasts. Then the decision engine converts the power forecast into trading, balancing, reserve, and site-ranking outputs.
 
-Satellite SSI and cloud information → solar geometry and clear-sky physics → atmospheric correction → ML residual forecast → uncertainty calibration → PV power → operator action.
+The strict as-of backtest shows the forecast uses information available at issue time, and the dashboard keeps the benchmark evidence visible.
 
-It also shows live source status for EUMETSAT, NASA POWER, Open-Meteo, and the physical solar model.
+## 2:55-3:00 Close
 
-This view is also where we explain status honesty: Live, Cached, Fallback, Unavailable, and Manual download required. We can point directly to the source cards and show that fallback never masquerades as live satellite input.
-
-Uncertainty is generated with LightGBM quantile models and calibrated on the validation set only. The P10-P90 interval is carried through the PV model into operational decisions.
-
-## 3:20-3:30 Closing Statement
-
-SolarOps turns satellite-derived irradiance into operational solar decisions: how much power, when it changes, how certain the forecast is, and what the operator should do next.
+SolarCast Ops turns satellite data into decisions operators can act on: forecast power, quantify uncertainty, beat persistence, rank sites, and prepare the next market or grid action.

@@ -8,7 +8,7 @@
       "valid_until": "2026-06-13T11:00:00+02:00",
       "reason": "Monitor forecast because uncertainty is high",
       "confidence": "medium",
-      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+      "basis": "operational suggestion from probabilistic PV forecast"
     },
     {
       "site_id": "munich_east",
@@ -18,7 +18,7 @@
       "valid_until": "2026-06-13T11:00:00+02:00",
       "reason": "Monitor forecast because uncertainty is high",
       "confidence": "medium",
-      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+      "basis": "operational suggestion from probabilistic PV forecast"
     },
     {
       "site_id": "munich_north",
@@ -28,7 +28,7 @@
       "valid_until": "2026-06-13T11:00:00+02:00",
       "reason": "Monitor forecast because uncertainty is high",
       "confidence": "medium",
-      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+      "basis": "operational suggestion from probabilistic PV forecast"
     },
     {
       "site_id": "munich_south",
@@ -38,7 +38,7 @@
       "valid_until": "2026-06-13T11:00:00+02:00",
       "reason": "Monitor forecast because uncertainty is high",
       "confidence": "medium",
-      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+      "basis": "operational suggestion from probabilistic PV forecast"
     },
     {
       "site_id": "munich_west",
@@ -48,7 +48,7 @@
       "valid_until": "2026-06-13T11:00:00+02:00",
       "reason": "Monitor forecast because uncertainty is high",
       "confidence": "medium",
-      "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome"
+      "basis": "operational suggestion from probabilistic PV forecast"
     }
   ],
   "count": 5

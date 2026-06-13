@@ -1,19 +1,23 @@
 import type { ForecastPoint } from './types';
 
-export function formatKw(value: number | null | undefined): string {
-  if (value == null || Number.isNaN(value)) return 'Unavailable';
-  return `${value.toFixed(value >= 10 ? 1 : 2)} kW`;
+export function formatPower(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return 'Unavailable';
+  const abs = Math.abs(value);
+  if (abs >= 1000) return `${(value / 1000).toFixed(abs >= 10000 ? 1 : 2)} GW`;
+  return `${value.toFixed(abs >= 10 ? 1 : 2)} MW`;
 }
 
-export function formatKwh(value: number | null | undefined): string {
-  if (value == null || Number.isNaN(value)) return 'Unavailable';
-  return `${value.toFixed(value >= 10 ? 1 : 2)} kWh`;
+export function formatEnergy(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return 'Unavailable';
+  const abs = Math.abs(value);
+  if (abs >= 1000) return `${(value / 1000).toFixed(abs >= 10000 ? 1 : 2)} GWh`;
+  return `${value.toFixed(abs >= 10 ? 1 : 2)} MWh`;
 }
 
-export function formatPercent(value: number | null | undefined, fraction = true): string {
-  if (value == null || Number.isNaN(value)) return 'Unavailable';
+export function formatPercent(value: number | null | undefined, fraction = true, decimals = 0): string {
+  if (value == null || !Number.isFinite(value)) return 'Unavailable';
   const pct = fraction ? value * 100 : value;
-  return `${pct.toFixed(0)}%`;
+  return `${pct.toFixed(decimals)}%`;
 }
 
 export function shortTime(value: string | null | undefined): string {
@@ -32,8 +36,8 @@ export function shortDateTime(value: string | null | undefined): string {
 
 export function sourceLabel(source: string): string {
   if (source === 'eumetsat_ssi') return 'EUMETSAT SSI';
-  if (source === 'nasa_power') return 'NASA POWER fallback';
-  if (source === 'openmeteo' || source === 'unavailable') return 'Open-Meteo fallback';
+  if (source === 'nasa_power') return 'NASA POWER';
+  if (source === 'openmeteo' || source === 'unavailable') return 'Open-Meteo satellite';
   return source.replaceAll('_', ' ');
 }
 

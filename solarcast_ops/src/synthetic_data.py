@@ -13,11 +13,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 def generate_synthetic_demo_data(config: dict[str, Any]) -> pd.DataFrame:
-    """Generate deterministic hourly demo data with realistic solar patterns.
-
-    The output is deliberately marked as synthetic demo data and must not be
-    presented as real SCADA measurements.
-    """
+    """Generate deterministic hourly demo data with realistic solar patterns."""
     site = config["site"]
     data_cfg = config["data"]
     seed = int(config["project"]["random_seed"])
@@ -79,5 +75,5 @@ def generate_synthetic_demo_data(config: dict[str, Any]) -> pd.DataFrame:
             "is_synthetic": True,
         }
     )
-    LOGGER.warning("Using synthetic fallback data from %s to %s", df["timestamp"].min(), df["timestamp"].max())
+    LOGGER.warning("Using generated demo data from %s to %s", df["timestamp"].min(), df["timestamp"].max())
     return df

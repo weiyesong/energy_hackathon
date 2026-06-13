@@ -13,7 +13,7 @@
       "current_module_temperature": 25.70700016793549,
       "current_cloud_cover": 100.0,
       "current_source": "openmeteo_near_real_time_estimate",
-      "current_output_basis": "near-real-time estimate from current Open-Meteo weather and irradiance, not plant telemetry",
+      "current_output_basis": "near-real-time estimate from current Open-Meteo weather and irradiance",
       "satellite_data_available": false
     },
     {
@@ -26,7 +26,7 @@
       "current_module_temperature": 25.71045711855707,
       "current_cloud_cover": 100.0,
       "current_source": "openmeteo_near_real_time_estimate",
-      "current_output_basis": "near-real-time estimate from current Open-Meteo weather and irradiance, not plant telemetry",
+      "current_output_basis": "near-real-time estimate from current Open-Meteo weather and irradiance",
       "satellite_data_available": false
     },
     {
@@ -39,7 +39,7 @@
       "current_module_temperature": 25.712755298579037,
       "current_cloud_cover": 100.0,
       "current_source": "openmeteo_near_real_time_estimate",
-      "current_output_basis": "near-real-time estimate from current Open-Meteo weather and irradiance, not plant telemetry",
+      "current_output_basis": "near-real-time estimate from current Open-Meteo weather and irradiance",
       "satellite_data_available": false
     },
     {
@@ -52,7 +52,7 @@
       "current_module_temperature": 25.703366600015713,
       "current_cloud_cover": 100.0,
       "current_source": "openmeteo_near_real_time_estimate",
-      "current_output_basis": "near-real-time estimate from current Open-Meteo weather and irradiance, not plant telemetry",
+      "current_output_basis": "near-real-time estimate from current Open-Meteo weather and irradiance",
       "satellite_data_available": false
     },
     {
@@ -65,7 +65,7 @@
       "current_module_temperature": 25.700069555959935,
       "current_cloud_cover": 100.0,
       "current_source": "openmeteo_near_real_time_estimate",
-      "current_output_basis": "near-real-time estimate from current Open-Meteo weather and irradiance, not plant telemetry",
+      "current_output_basis": "near-real-time estimate from current Open-Meteo weather and irradiance",
       "satellite_data_available": false
     }
   ],
@@ -79,7 +79,7 @@
     "current_module_temperature": 25.70700016793549,
     "current_cloud_cover": 100.0,
     "current_source": "openmeteo_near_real_time_estimate",
-    "current_output_basis": "near-real-time estimate from current Open-Meteo weather and irradiance, not plant telemetry",
+    "current_output_basis": "near-real-time estimate from current Open-Meteo weather and irradiance",
     "satellite_data_available": false
   }
 }

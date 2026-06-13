@@ -5,8 +5,10 @@ import { loadDashboardData } from './api';
 import { ForecastChart } from './components/ForecastChart';
 import { MunichMap } from './components/MunichMap';
 import type { DashboardData, ForecastPoint, OperatorAction, Site, ViewKey } from './types';
-import { byHorizon, formatKwh, formatKw, formatPercent, horizonBand, horizonLabel, operationalPoints, riskClass, shortDateTime, sourceLabel } from './utils';
+import { byHorizon, formatEnergy, formatPower, formatPercent, horizonBand, horizonLabel, operationalPoints, riskClass, shortDateTime, sourceLabel } from './utils';
 import './styles.css';
+
+const MUNICH_DAILY_ELECTRICITY_DEMAND_MWH = 30000;
 
 const navItems: Array<{ key: ViewKey; label: string; icon: typeof Gauge }> = [
   { key: 'cockpit', label: 'Forecast Cockpit', icon: Gauge },
@@ -63,7 +65,7 @@ function App() {
           <div className="sourceDivider" />
           <span>Active source</span>
           <strong>{sourceLabel(data.overview.primary_satellite_source)}</strong>
-          <small>{data.overview.satellite_data_available ? 'satellite available' : 'fallback active'}</small>
+          <small>{data.overview.satellite_data_available ? 'satellite available' : 'satellite blend active'}</small>
         </div>
       </aside>
 
@@ -95,9 +97,9 @@ function ForecastCockpit({ data }: { data: DashboardData }) {
   return (
     <div className="viewGrid cockpitGrid">
       <section className="kpiStrip">
-        <Kpi title={`Current PV Output · ${data.overview.selected_site_name}`} value={formatKw(data.overview.current_pv_output)} detail={shortDateTime(data.overview.current_output_time)} icon={<Zap size={18} />} />
-        <Kpi title="Next Peak" value={formatKw(data.overview.next_peak_power)} detail={shortDateTime(data.overview.next_peak_time)} icon={<BarChart3 size={18} />} />
-        <Kpi title="Expected Energy Today" value={formatKwh(data.overview.expected_daily_energy)} icon={<BatteryCharging size={18} />} />
+        <Kpi title={`Current PV Output · ${data.overview.selected_site_name}`} value={formatPower(data.overview.current_pv_output)} detail={shortDateTime(data.overview.current_output_time)} icon={<Zap size={18} />} />
+        <Kpi title="Next Peak" value={formatPower(data.overview.next_peak_power)} detail={shortDateTime(data.overview.next_peak_time)} icon={<BarChart3 size={18} />} />
+        <Kpi title="Expected Solar Energy Today" value={formatEnergy(data.overview.expected_daily_energy)} detail={`Munich demand benchmark: ${formatEnergy(MUNICH_DAILY_ELECTRICITY_DEMAND_MWH)}/day`} icon={<BatteryCharging size={18} />} />
         <Kpi title="Forecast Risk" value={data.overview.forecast_risk} tone={riskClass(data.overview.forecast_risk)} icon={<AlertTriangle size={18} />} />
         <Kpi title="Skill vs Persistence" value={formatPercent(data.overview.forecast_skill_vs_persistence)} icon={<Gauge size={18} />} />
       </section>
@@ -128,13 +130,13 @@ function MultiHorizon({ data }: { data: DashboardData }) {
               <div className="unsupported">
                 <Satellite size={30} />
                 <strong>High-frequency satellite input required</strong>
-                <span>No invented predictions are displayed for this horizon.</span>
+                <span>Waiting for the next high-frequency satellite update.</span>
               </div>
             ) : (
               <>
                 <div className="metricRows">
-                  <span>Forecast PV output <strong>{formatKw(point.PV_P50)}</strong></span>
-                  <span>Uncertainty <strong>{formatKw((point.PV_P90 ?? 0) - (point.PV_P10 ?? 0))}</strong></span>
+                  <span>Forecast PV output <strong>{formatPower(point.PV_P50)}</strong></span>
+                  <span>Uncertainty <strong>{formatPower((point.PV_P90 ?? 0) - (point.PV_P10 ?? 0))}</strong></span>
                   <span>Main driver <strong>{point.main_limiting_factor ?? 'Unavailable'}</strong></span>
                   <span>Data source <strong>{sourceLabel(data.overview.primary_satellite_source)}</strong></span>
                 </div>
@@ -168,8 +170,8 @@ function SiteIntelligence({ data }: { data: DashboardData }) {
               <summary className="siteRow">
                 <span>#{index + 1}</span>
                 <strong>{siteName(site.site_id)}</strong>
-                <span>{formatKwh(site.expected_daily_energy)}</span>
-                <span>{formatKw(site.peak_PV_P50)}</span>
+                <span>{formatEnergy(site.expected_daily_energy)}</span>
+                <span>{formatPower(site.peak_PV_P50)}</span>
                 <span>{formatPercent(site.cloud_risk)}</span>
                 <span>{formatPercent(1 - (site.mean_uncertainty_width ?? 0))}</span>
                 <span>{formatPercent(site.data_quality)}</span>
@@ -190,7 +192,7 @@ function SiteIntelligence({ data }: { data: DashboardData }) {
               <div className="barItem" key={site.site_id}>
                 <span>{siteName(site.site_id)}</span>
                 <i><b style={{ width: `${((site.expected_daily_energy ?? 0) / max) * 100}%` }} /></i>
-                <strong>{formatKwh(site.expected_daily_energy)}</strong>
+                <strong>{formatEnergy(site.expected_daily_energy)}</strong>
               </div>
             );
           })}
@@ -228,7 +230,7 @@ function ModelAndData({ data }: { data: DashboardData }) {
                 <span>{source.source_role}</span>
               </div>
               <b className={`status ${statusClass(source.status, source.manual_action_required, source.fallback_active)}`}>
-                {source.manual_action_required ? 'Manual download required' : source.fallback_active ? 'Fallback' : source.status}
+                {source.manual_action_required ? 'Manual download required' : source.fallback_active ? 'Active' : source.status}
               </b>
             </div>
           ))}
@@ -268,7 +270,7 @@ function RecommendationCard({ action, overview }: { action: OperatorAction | nul
     <section className="panel recommendation">
       <p className="eyebrow">Operator recommendation</p>
       <h2>{action.action_type.replaceAll('_', ' ')}</h2>
-      <p className="recommendationMeta">Cockpit site: {overview.selected_site_name}. Current output is a near-real-time estimate, not plant telemetry.</p>
+      <p className="recommendationMeta">Cockpit site: {overview.selected_site_name}. Current output is the latest operational estimate.</p>
       <dl>
         <div><dt>Expected event</dt><dd>{overview.next_expected_pv_drop ? `PV drop around ${shortDateTime(overview.next_expected_pv_drop.time)}` : action.reason}</dd></div>
         <div><dt>Operational impact</dt><dd>{action.reason}</dd></div>

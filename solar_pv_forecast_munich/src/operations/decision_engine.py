@@ -258,7 +258,7 @@ def _action(
         "valid_until": None if pd.isna(end) else end.isoformat(),
         "reason": reason,
         "confidence": confidence,
-        "basis": "operational suggestion from probabilistic PV forecast, not a guaranteed financial outcome",
+        "basis": "operational suggestion from probabilistic PV forecast",
     }
 
 

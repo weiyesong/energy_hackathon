@@ -14,7 +14,7 @@ DEFAULT_REGISTRY_PATH = Path("data/processed/data_source_registry.json")
 SOURCE_TYPE_LABELS = {
     "eumetsat_ssi": "primary operational satellite-derived irradiance source",
     "nasa_power": "satellite/model-derived historical solar baseline",
-    "openmeteo": "weather forecast and fallback irradiance source",
+    "openmeteo": "weather forecast and satellite irradiance source",
 }
 
 

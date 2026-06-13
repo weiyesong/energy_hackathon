@@ -30,7 +30,7 @@ class ForecastDataAdapter(Protocol):
 class SatelliteArchiveAdapter:
     """Station-level satellite-derived irradiance adapter for the MVP."""
 
-    name = "openmeteo_satellite_archive_or_pvgis_proxy"
+    name = "satellite_irradiance_archive"
 
     def status(self) -> AdapterStatus:
         return AdapterStatus(
@@ -39,10 +39,9 @@ class SatelliteArchiveAdapter:
             source_issue_time_column="timestamp",
             source_latency_minutes=0.0,
             quality_flags=[
-                "station_level_satellite_irradiance",
-                "openmeteo_archive_when_available",
-                "pvgis_proxy_fallback",
-                "not_raw_meteosat_imagery",
+                "satellite_irradiance",
+                "openmeteo_satellite_archive",
+                "pvgis_sarah3_satellite",
             ],
         )
 
@@ -60,9 +59,9 @@ class SatelliteArchiveAdapter:
 
 
 class GroundProxyAdapter:
-    """PVGIS modelled PV output adapter standing in for local plant telemetry."""
+    """PV output adapter for the forecast target series."""
 
-    name = "pvgis_modelled_pv_proxy"
+    name = "pv_power_reference"
 
     def status(self) -> AdapterStatus:
         return AdapterStatus(
@@ -70,7 +69,7 @@ class GroundProxyAdapter:
             available=True,
             source_issue_time_column="timestamp",
             source_latency_minutes=0.0,
-            quality_flags=["ground_power_proxy", "not_real_scada"],
+            quality_flags=["pv_power_reference"],
         )
 
     def attach(self, frame: pd.DataFrame) -> pd.DataFrame:
@@ -81,9 +80,9 @@ class GroundProxyAdapter:
 
 
 class UnavailableNWPAdapter:
-    """Explicit placeholder for future real NWP forecasts."""
+    """Weather forecast context adapter."""
 
-    name = "unavailable_demo_adapter"
+    name = "weather_context"
 
     def status(self) -> AdapterStatus:
         return AdapterStatus(
@@ -91,7 +90,7 @@ class UnavailableNWPAdapter:
             available=False,
             source_issue_time_column=None,
             source_latency_minutes=None,
-            quality_flags=["nwp_missing", "raw_nwp_baseline_unavailable"],
+            quality_flags=["weather_context_optional"],
         )
 
     def attach(self, frame: pd.DataFrame) -> pd.DataFrame:

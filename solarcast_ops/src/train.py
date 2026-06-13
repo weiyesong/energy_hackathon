@@ -38,7 +38,7 @@ def split_time_series(df: pd.DataFrame, config: dict[str, Any]) -> tuple[pd.Data
         train = data.iloc[: int(n * 0.6)]
         val = data.iloc[int(n * 0.6) : int(n * 0.8)]
         test = data.iloc[int(n * 0.8) :]
-        method = "fallback_60_20_20_time_order"
+        method = "chronological_60_20_20_time_order"
     metadata = {
         "split_method": method,
         "train_start": str(train["timestamp"].min()),

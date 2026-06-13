@@ -94,7 +94,7 @@ def _select_ranking_horizon(df: pd.DataFrame) -> int:
 
 
 def _expected_daily_energy(df: pd.DataFrame) -> float:
-    """Estimate mean daily P50 energy in kWh for the selected horizon."""
+    """Estimate mean daily P50 energy in MWh for the selected horizon."""
     power = pd.to_numeric(df.get("PV_P50", 0.0), errors="coerce").fillna(0.0)
     minutes = pd.to_numeric(df.get("horizon_minutes", 60), errors="coerce").fillna(60.0)
     energy = power * minutes / 60.0
@@ -104,7 +104,7 @@ def _expected_daily_energy(df: pd.DataFrame) -> float:
 
 
 def _mean_uncertainty_width(df: pd.DataFrame) -> float:
-    """Return mean PV P90-P10 interval width in kW."""
+    """Return mean PV P90-P10 interval width in MW."""
     width = pd.to_numeric(df.get("PV_P90", 0.0), errors="coerce") - pd.to_numeric(df.get("PV_P10", 0.0), errors="coerce")
     return float(width.clip(lower=0.0).mean()) if len(width) else 0.0
 

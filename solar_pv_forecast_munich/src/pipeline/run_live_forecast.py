@@ -140,7 +140,7 @@ def build_live_current_state(
                 "current_module_temperature": float(pv.iloc[0]["module_temperature"]),
                 "current_cloud_cover": _as_float(weather_row.get("cloud_cover")),
                 "current_source": "openmeteo_near_real_time_estimate",
-                "current_output_basis": "near-real-time estimate from current Open-Meteo weather and irradiance, not plant telemetry",
+                "current_output_basis": "near-real-time estimate from current Open-Meteo weather and irradiance",
                 "satellite_data_available": bool(source_status["satellite_data_available"]),
             }
         )

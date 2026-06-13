@@ -17,8 +17,8 @@ def test_openmeteo_satellite_archive_overrides_irradiance_by_hour() -> None:
             "wind_speed_ms": [3.0, 4.0],
             "solar_elevation_deg": [45.0, 50.0],
             "data_source": ["PVGIS"] * 2,
-            "irradiance_source": ["PVGIS/SARAH-3 satellite-derived proxy"] * 2,
-            "pv_power_source": ["PVGIS modelled PV output"] * 2,
+            "irradiance_source": ["PVGIS/SARAH-3 satellite-derived irradiance"] * 2,
+            "pv_power_source": ["PVGIS PV output"] * 2,
             "satellite_archive_available": [False, False],
             "is_synthetic": [False, False],
         }

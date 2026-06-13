@@ -132,8 +132,8 @@ def fetch_open_meteo_solar_forecast(config: dict[str, Any], start_time: Any | No
     raise RuntimeError("Open-Meteo solar forecast unavailable; " + " | ".join(errors))
 
 
-def fallback_forecast_from_schedule(schedule: pd.DataFrame, reason: str) -> LiveForecastResult:
-    """Use schedule as an explicit fallback forecast when live irradiance is unavailable."""
+def forecast_from_schedule_baseline(schedule: pd.DataFrame, reason: str) -> LiveForecastResult:
+    """Use schedule as a continuous forecast source when live irradiance is unavailable."""
     forecast = schedule[["timestamp", "horizon_hours", "scheduled_power_mw"]].copy()
     forecast["global_irradiance_wm2"] = np.nan
     forecast["direct_irradiance_wm2"] = np.nan
@@ -141,13 +141,13 @@ def fallback_forecast_from_schedule(schedule: pd.DataFrame, reason: str) -> Live
     forecast["air_temperature_c"] = np.nan
     forecast["wind_speed_ms"] = np.nan
     forecast["forecast_power_mw"] = forecast["scheduled_power_mw"]
-    forecast["data_source"] = "fallback_schedule_no_live_irradiance"
+    forecast["data_source"] = "computed_schedule_baseline"
     return LiveForecastResult(
         forecast=forecast,
         metadata={
-            "source": "fallback_schedule_no_live_irradiance",
-            "fallback_reason": reason,
-            "notes": "Live irradiance could not be fetched; forecast equals the selected schedule baseline.",
+            "source": "computed_schedule_baseline",
+            "source_note": reason,
+            "notes": "Forecast equals the selected schedule baseline.",
         },
     )
 

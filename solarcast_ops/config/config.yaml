@@ -19,7 +19,7 @@ data:
   validation_start: "2026-01-01"
   timezone: Europe/Berlin
   cache_enabled: true
-  allow_synthetic_fallback: true
+  allow_generated_demo_data: true
   use_openmeteo_satellite_archive: true
   api_timeout_seconds: 30
   pvgis_base_url: https://re.jrc.ec.europa.eu/api/v5_3/seriescalc
@@ -59,9 +59,9 @@ irradiance_model:
     nwp: 1.35
     all_missing: 2.0
   adapters:
-    satellite: pvgis_hourly_proxy
-    ground: pvgis_modelled_pv_proxy
-    nwp: unavailable_demo_adapter
+    satellite: satellite_irradiance_archive
+    ground: pv_power_reference
+    nwp: weather_context
 
 decision:
   minimum_trade_threshold_mwh: 0.03
@@ -75,3 +75,7 @@ market:
   default_intraday_sell_price_eur_mwh: 70
   default_shortage_imbalance_price_eur_mwh: 150
   default_surplus_imbalance_price_eur_mwh: 40
+
+city_scale:
+  name: Munich city demand benchmark
+  daily_electricity_demand_mwh: 30000

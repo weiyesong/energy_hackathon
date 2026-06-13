@@ -22,11 +22,11 @@ def test_asof_backtest_blocks_future_labels() -> None:
         asof = pd.Timestamp(row.asof_time)
         assert cutoff <= asof - pd.Timedelta(hours=int(row.horizon_h))
     assert {
-        "cloud_opacity_proxy",
-        "cloud_variability_proxy",
-        "cloud_trend_proxy",
-        "wind_advected_cloud_change_proxy",
-        "cloud_ramp_risk_proxy",
+        "cloud_opacity_signal",
+        "cloud_variability_signal",
+        "cloud_trend_signal",
+        "wind_advected_cloud_change_signal",
+        "cloud_ramp_risk_signal",
         "wind_speed_ms",
         "pred_ghi_wm2",
     }.issubset(result.predictions.columns)

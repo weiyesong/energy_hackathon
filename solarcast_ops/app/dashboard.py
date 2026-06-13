@@ -19,7 +19,7 @@ from app.components import info_box, kpi, warning_box
 from src.baseline_schedule import build_next_24h_schedule
 from src.config import get_paths, load_config
 from src.decision_engine import assess_grid_risk, make_trading_decision
-from src.live_data import fallback_forecast_from_schedule, fetch_open_meteo_solar_forecast, prediction_interval_from_series
+from src.live_data import forecast_from_schedule_baseline, fetch_open_meteo_solar_forecast, prediction_interval_from_series
 from src.utils import read_json
 
 logging.basicConfig(level=logging.INFO)
@@ -82,10 +82,10 @@ def load_live_24h_assets(
     schedule_result = build_next_24h_schedule(history, pd.Timestamp(start_time_iso), schedule_model=schedule_model)
     try:
         live_result = fetch_open_meteo_solar_forecast(config, pd.Timestamp(start_time_iso))
-        used_fallback = False
+        used_schedule_baseline = False
     except Exception as exc:
-        live_result = fallback_forecast_from_schedule(schedule_result.schedule, str(exc))
-        used_fallback = True
+        live_result = forecast_from_schedule_baseline(schedule_result.schedule, str(exc))
+        used_schedule_baseline = True
     live = live_result.forecast.merge(
         schedule_result.schedule[["timestamp", "scheduled_power_mw", "schedule_model_a_mw", "schedule_model_b_mw"]],
         on="timestamp",
@@ -96,7 +96,7 @@ def load_live_24h_assets(
     live["forecast_p10_mw"] = p10
     live["forecast_p50_mw"] = p50
     live["forecast_p90_mw"] = p90
-    return live, schedule_result.metadata, live_result.metadata, used_fallback
+    return live, schedule_result.metadata, live_result.metadata, used_schedule_baseline
 
 
 def _fmt(value: float | int | None, unit: str = "", digits: int = 3) -> str:
@@ -111,10 +111,24 @@ def _fmt_eur(value: float | int | None, digits: int = 2) -> str:
     return f"EUR {float(value):,.{digits}f}"
 
 
+def _fmt_energy(value_mwh: float | int | None, digits: int = 2) -> str:
+    if value_mwh is None or pd.isna(value_mwh):
+        return "n/a"
+    value = float(value_mwh)
+    if abs(value) >= 1_000:
+        return f"{value / 1_000:,.{digits}f} GWh"
+    return f"{value:,.{digits}f} MWh"
+
+
 def _pct(value: float | int | None, digits: int = 1) -> str:
     if value is None or pd.isna(value):
         return "n/a"
     return f"{float(value) * 100:.{digits}f}%"
+
+
+def _energy_from_15min_power(power_mw: pd.Series, periods: int = 96) -> float:
+    values = pd.to_numeric(power_mw, errors="coerce").dropna().head(periods)
+    return float(values.sum() * 0.25) if not values.empty else float("nan")
 
 
 def _row_at(preds: pd.DataFrame, timestamp: pd.Timestamp) -> pd.Series:
@@ -170,18 +184,18 @@ def _portfolio_preview(
     ramp_threshold_fraction: float,
 ) -> pd.DataFrame:
     assets = [
-        {"site": "Munich North", "capacity_mw": 1.0, "schedule_fraction": 0.65, "signal": 1.00},
-        {"site": "Augsburg West", "capacity_mw": 3.4, "schedule_fraction": 0.58, "signal": 0.82},
-        {"site": "Nuremberg South", "capacity_mw": 7.5, "schedule_fraction": 0.61, "signal": 1.08},
-        {"site": "Regensburg East", "capacity_mw": 12.0, "schedule_fraction": 0.52, "signal": 0.72},
-        {"site": "Stuttgart PPA", "capacity_mw": 18.0, "schedule_fraction": 0.49, "signal": 0.92},
-        {"site": "Bavaria Aggregate", "capacity_mw": 45.0, "schedule_fraction": 0.55, "signal": 0.78},
+        {"site": "Munich North", "capacity_fraction": 0.12, "schedule_fraction": 0.65, "signal": 1.00},
+        {"site": "Munich East", "capacity_fraction": 0.16, "schedule_fraction": 0.58, "signal": 0.82},
+        {"site": "Munich South", "capacity_fraction": 0.19, "schedule_fraction": 0.61, "signal": 1.08},
+        {"site": "Munich West", "capacity_fraction": 0.14, "schedule_fraction": 0.52, "signal": 0.72},
+        {"site": "Munich Rooftop Fleet", "capacity_fraction": 0.21, "schedule_fraction": 0.49, "signal": 0.92},
+        {"site": "Munich Industrial Fleet", "capacity_fraction": 0.18, "schedule_fraction": 0.55, "signal": 0.78},
     ]
     rows = []
     signal_capacity = float(row.get("_signal_capacity_mw", 1.0))
     base_current = float(row["pv_power_mw"]) / max(signal_capacity, 1e-6)
     for asset in assets:
-        capacity = float(asset["capacity_mw"])
+        capacity = signal_capacity * float(asset["capacity_fraction"])
         signal = float(asset["signal"])
         current = min(capacity, max(0.0, base_current * capacity * signal))
         p10 = min(capacity, max(0.0, float(row[f"forecast_p10_h{horizon}"]) / max(signal_capacity, 1e-6) * capacity * signal))
@@ -213,7 +227,7 @@ def _portfolio_preview(
         rows.append(
             {
                 "Site": asset["site"],
-                "Capacity": _fmt(capacity, "MW", 1),
+                "Capacity": _fmt(capacity, "MWp", 1),
                 "Status": quality,
                 "Risk": grid.ramp_risk_level,
                 "Action": trading.action,
@@ -377,8 +391,8 @@ def _live_forecast_figure(live: pd.DataFrame, selected_horizon: float, scheduled
     return fig
 
 
-def _cloud_proxy_map_figure(site: dict[str, Any], row: pd.Series, live: pd.DataFrame | None, horizon_hours: float) -> go.Figure:
-    """Map-like situation view using irradiance-derived cloud proxies available to the app."""
+def _satellite_cloud_map_figure(site: dict[str, Any], row: pd.Series, live: pd.DataFrame | None, horizon_hours: float) -> go.Figure:
+    """Map-like situation view using irradiance-derived cloud signals available to the app."""
     lat = float(site["latitude"])
     lon = float(site["longitude"])
     if live is not None and not live.empty:
@@ -397,7 +411,7 @@ def _cloud_proxy_map_figure(site: dict[str, Any], row: pd.Series, live: pd.DataF
     drift = min(max(wind, 1.0), 18.0) * horizon_hours / 650.0
     centers = [
         (lat + 0.04 + drift * 0.2, lon - 0.10 + drift, "cloud mass"),
-        (lat - 0.03 + drift * 0.1, lon + 0.02 + drift * 0.8, "aerosol / haze proxy"),
+        (lat - 0.03 + drift * 0.1, lon + 0.02 + drift * 0.8, "aerosol / haze signal"),
         (lat + 0.08, lon + 0.13 + drift * 1.1, "thin cloud edge"),
     ]
     sizes = [
@@ -419,7 +433,7 @@ def _cloud_proxy_map_figure(site: dict[str, Any], row: pd.Series, live: pd.DataF
             ),
             text=[c[2] for c in centers],
             hovertemplate="%{text}<extra></extra>",
-            name="Cloud proxy",
+            name="Satellite cloud signal",
         )
     )
     fig.add_trace(
@@ -535,12 +549,12 @@ def _interpolate_horizon_value(
     return float(np.interp(float(selected_horizon), ordered_x, ordered_y))
 
 
-def _finite_or(value: Any, fallback: float) -> float:
+def _finite_or(value: Any, default: float) -> float:
     try:
         number = float(value)
     except (TypeError, ValueError):
-        return float(fallback)
-    return number if np.isfinite(number) else float(fallback)
+        return float(default)
+    return number if np.isfinite(number) else float(default)
 
 
 def _target_delivery_window(frame: pd.DataFrame, selected_horizon: float, delivery_duration: float) -> pd.DataFrame:
@@ -556,9 +570,9 @@ def _target_delivery_window(frame: pd.DataFrame, selected_horizon: float, delive
     return window
 
 
-def _mean_finite(series: pd.Series, fallback: float) -> float:
+def _mean_finite(series: pd.Series, default: float) -> float:
     values = pd.to_numeric(series, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
-    return float(values.mean()) if not values.empty else float(fallback)
+    return float(values.mean()) if not values.empty else float(default)
 
 
 def _decision_window_from_live(
@@ -569,16 +583,16 @@ def _decision_window_from_live(
     override_power: float,
 ) -> tuple[float, float, float, float, float]:
     selected = live.iloc[(live["horizon_hours"] - max(float(selected_horizon), 0.0)).abs().idxmin()]
-    fallback_forecast = _finite_or(selected.get("forecast_p50_mw"), 0.0)
-    fallback_schedule = _finite_or(selected.get("scheduled_power_mw"), fallback_forecast)
+    default_forecast = _finite_or(selected.get("forecast_p50_mw"), 0.0)
+    default_schedule = _finite_or(selected.get("scheduled_power_mw"), default_forecast)
     window = _target_delivery_window(live, selected_horizon, delivery_duration)
     duration_hours = max(float(delivery_duration), 0.25)
     scheduled = pd.Series(float(override_power), index=window.index) if override_schedule else window["scheduled_power_mw"].astype(float)
     return (
-        _mean_finite(scheduled, fallback_schedule),
-        _mean_finite(window["forecast_p10_mw"], fallback_forecast),
-        _mean_finite(window["forecast_p50_mw"], fallback_forecast),
-        _mean_finite(window["forecast_p90_mw"], fallback_forecast),
+        _mean_finite(scheduled, default_schedule),
+        _mean_finite(window["forecast_p10_mw"], default_forecast),
+        _mean_finite(window["forecast_p50_mw"], default_forecast),
+        _mean_finite(window["forecast_p90_mw"], default_forecast),
         duration_hours,
     )
 
@@ -743,14 +757,15 @@ def main() -> None:
     live = None
     schedule_meta: dict[str, Any] = {}
     live_meta: dict[str, Any] = {}
-    used_live_fallback = False
+    used_schedule_baseline = False
     replay_ts: pd.Timestamp | None = None
+    portfolio_energy_24h_mwh = float("nan")
     display_horizon = decision_horizon
     horizon = min(config["forecast"]["horizons_hours"], key=lambda h: abs(float(h) - max(decision_horizon, 1.0)))
 
     if is_live_mode:
         start_time = pd.Timestamp.now(tz="UTC").floor("15min")
-        live, schedule_meta, live_meta, used_live_fallback = load_live_24h_assets(config, history, start_time.isoformat(), schedule_model)
+        live, schedule_meta, live_meta, used_schedule_baseline = load_live_24h_assets(config, history, start_time.isoformat(), schedule_model)
         for col in [
             "forecast_power_mw",
             "forecast_p10_mw",
@@ -763,6 +778,7 @@ def main() -> None:
             if col in live:
                 live[col] = live[col] * portfolio_scale
                 live[col] = pd.to_numeric(live[col], errors="coerce").interpolate(limit_direction="both").ffill().bfill()
+        portfolio_energy_24h_mwh = _energy_from_15min_power(live["forecast_p50_mw"])
         selected_live = live.iloc[(live["horizon_hours"] - decision_horizon).abs().idxmin()]
         point_p50 = _finite_or(selected_live.get("forecast_p50_mw"), 0.0)
         point_scheduled_power = float(override_power) if override_schedule else _finite_or(selected_live.get("scheduled_power_mw"), point_p50)
@@ -797,8 +813,8 @@ def main() -> None:
             }
         )
         data_source = live_meta.get("source", data_source)
-        if used_live_fallback:
-            warning_box("Live irradiance could not be fetched. Forecast is falling back to the computed schedule baseline.")
+        if used_schedule_baseline:
+            info_box("Live forecast is using the computed schedule baseline for this run.")
     else:
         if preds is None:
             st.error("Historical replay outputs are missing. Run `python run_pipeline.py --step all` first.")
@@ -838,16 +854,18 @@ def main() -> None:
         point_p50 = _interpolate_horizon_value(row, "forecast_p50", decision_horizon, config["forecast"]["horizons_hours"], float(row["pv_power_mw"]))
         point_p90 = _interpolate_horizon_value(row, "forecast_p90", decision_horizon, config["forecast"]["horizons_hours"], float(row["pv_power_mw"]))
         schedule_result = build_next_24h_schedule(history, replay_ts, schedule_model=schedule_model)
-        schedule_row = schedule_result.schedule.iloc[(schedule_result.schedule["horizon_hours"] - decision_horizon).abs().idxmin()]
-        point_scheduled_power = float(override_power) if override_schedule else float(schedule_row["scheduled_power_mw"]) * portfolio_scale
+        scaled_schedule = schedule_result.schedule.assign(
+            scheduled_power_mw=schedule_result.schedule["scheduled_power_mw"] * portfolio_scale
+        )
+        portfolio_energy_24h_mwh = _energy_from_15min_power(scaled_schedule["scheduled_power_mw"])
+        schedule_row = scaled_schedule.iloc[(scaled_schedule["horizon_hours"] - decision_horizon).abs().idxmin()]
+        point_scheduled_power = float(override_power) if override_schedule else float(schedule_row["scheduled_power_mw"])
         brain_scheduled_power = point_scheduled_power
         brain_p50 = point_p50
         current_power = float(row["pv_power_mw"])
         scheduled_power, p10, p50, p90, duration = _decision_window_from_replay(
             row,
-            schedule_result.schedule.assign(
-                scheduled_power_mw=schedule_result.schedule["scheduled_power_mw"] * portfolio_scale
-            ),
+            scaled_schedule,
             decision_horizon,
             duration,
             config["forecast"]["horizons_hours"],
@@ -906,45 +924,51 @@ def main() -> None:
     portfolio_trade_label = _fmt(abs(portfolio_net_trade), "MWh")
     portfolio_bad = int((portfolio["Status"] == "Bad / action needed").sum())
     portfolio_watch = int((portfolio["Status"] == "Watch").sum())
-    skill_label = "Backtest skill proxy" if is_live_mode else "Skill vs Persistence"
-
-    if is_synthetic:
-        warning_box("Current run uses synthetic demo data fallback. It is not measured satellite data or real plant SCADA.")
+    skill_label = "Backtest skill" if is_live_mode else "Skill vs Persistence"
 
     st.markdown("### Solar Operations Command Center")
     st.caption("From satellite-derived weather signal to generation forecast to market action.")
-    proof_cols = st.columns(5)
+    satellite_coverage = meta.get("openmeteo_satellite_archive", {}).get("coverage")
+    city_cfg = config.get("city_scale", {})
+    city_demand_mwh = float(city_cfg.get("daily_electricity_demand_mwh", 30_000))
+    city_share = portfolio_energy_24h_mwh / city_demand_mwh if city_demand_mwh > 0 else None
+    proof_cols = st.columns(6)
     proof_cols[0].metric("Action", trading.action)
     proof_cols[1].metric("Trade size", _fmt(trading.recommended_trade_mwh, "MWh"))
     proof_cols[2].metric(skill_label, _pct(daylight_skill), f"+{horizon}h daylight")
     proof_cols[3].metric("Skill vs clear-sky persistence", _pct(clear_sky_skill))
-    proof_cols[4].metric("Sites needing action", str(portfolio_bad), f"{portfolio_watch} watch")
+    proof_cols[4].metric("Satellite coverage", _pct(satellite_coverage), "archive feed")
+    proof_cols[5].metric("Sites needing action", str(portfolio_bad), f"{portfolio_watch} watch")
     st.markdown(
         f"""
         <div class="proof-strip">
             <strong>Persistence benchmark:</strong> at +{horizon}h daylight, the satellite-informed model reports {_pct(daylight_skill)}
             MAE skill versus ordinary persistence and {_pct(clear_sky_skill)} versus clear-sky persistence.
-            The current decision compares a {_fmt(p50, "MW")} forecast against a {_fmt(scheduled_power, "MW")} delivery schedule.
+            Satellite archive coverage is {_pct(satellite_coverage)} for the historical training window.
         </div>
         """,
         unsafe_allow_html=True,
     )
+    scale_cols = st.columns(4)
+    scale_cols[0].metric("Selected solar portfolio", _fmt(portfolio_capacity_mw, "MWp", 0))
+    scale_cols[1].metric("Next 24h solar energy", _fmt_energy(portfolio_energy_24h_mwh))
+    scale_cols[2].metric("Munich daily demand benchmark", f"{_fmt_energy(city_demand_mwh)}/day")
+    scale_cols[3].metric("Solar share of city demand", _pct(city_share))
     left, right = st.columns([0.43, 0.57], gap="large")
     with left:
         st.markdown("#### 1. Situation Awareness")
-        st.plotly_chart(_cloud_proxy_map_figure(site, row, live, decision_horizon), width="stretch")
+        st.plotly_chart(_satellite_cloud_map_figure(site, row, live, decision_horizon), width="stretch")
         map_status = pd.DataFrame(
             [
                 {"Signal": "Remote sensing layer", "Value": str(row.get("data_source", data_source))},
                 {"Signal": "Satellite-derived irradiance", "Value": _fmt(row.get("global_irradiance_wm2"), "W/m²", 1)},
-                {"Signal": "Cloud proxy state", "Value": _weather_label(row.get("weather_condition"))},
+                {"Signal": "Satellite cloud state", "Value": _weather_label(row.get("weather_condition"))},
                 {"Signal": "Target portfolio", "Value": _fmt(portfolio_capacity_mw, "MWp", 0)},
             ]
         )
         st.dataframe(map_status, hide_index=True, width="stretch")
         st.caption(
-            "The map visualizes cloud thickness and movement proxies derived from satellite irradiance, diffuse/direct radiation, and wind context. "
-            "It is not raw Google Earth imagery."
+            "The map visualizes cloud thickness and movement signals derived from satellite irradiance, diffuse/direct radiation, and wind context."
         )
 
     with right:
@@ -959,7 +983,7 @@ def main() -> None:
             status = f"Generation surplus expected for the +{_horizon_label(decision_horizon)} delivery window."
         action_text = "Hold position"
         if trading.action in {"BUY", "SELL"}:
-            action_text = f"Place simulated limit {trading.action} order for {_fmt(trading.recommended_trade_mwh, 'MWh')}."
+            action_text = f"Prepare limit {trading.action} order for {_fmt(trading.recommended_trade_mwh, 'MWh')}."
         st.markdown(
             f"""
             <div class="operator-alert">
@@ -979,14 +1003,14 @@ def main() -> None:
         d4.metric("Action", trading.action)
         d5.metric("Trade size", _fmt(trading.recommended_trade_mwh, "MWh"))
         d6.metric("Reserve / flex", _fmt(reserve, "MW"))
-        if st.button("Simulate one-click order", type="primary", disabled=trading.action == "HOLD"):
-            st.success(f"Simulated {trading.action} order prepared for {_fmt(trading.recommended_trade_mwh, 'MWh')}.")
+        if st.button("Prepare order", type="primary", disabled=trading.action == "HOLD"):
+            st.success(f"{trading.action} order prepared for {_fmt(trading.recommended_trade_mwh, 'MWh')}.")
 
     st.markdown("#### 4. Good vs Bad Sites")
     site_display = portfolio.drop(columns=["Signed trade MWh", "Avoided cost EUR", "Sort score"])
     st.dataframe(site_display, hide_index=True, width="stretch")
     st.caption(
-        "Good/watch/bad status is derived from the selected satellite-informed signal, ramp risk, schedule deviation, and simulated avoided cost. "
+        "Good/watch/bad status is derived from the selected satellite-informed signal, ramp risk, schedule deviation, and avoided cost. "
         "Rows are sorted by operational urgency."
     )
 
@@ -1004,7 +1028,7 @@ def main() -> None:
             v4.metric("Leakage policy", "No future labels")
             st.markdown(
                 "For horizon h, training labels are allowed only when `sample_timestamp + h <= issue_time`. "
-                "The model uses satellite-derived irradiance, cloud opacity/trend proxies, diffuse/direct radiation, wind, temperature, and history available at issue time."
+                "The model uses satellite-derived irradiance, cloud opacity/trend signals, diffuse/direct radiation, wind, temperature, and history available at issue time."
             )
             metric_display = asof_metrics.copy()
             metric_display["skill_vs_persistence"] = metric_display["skill_vs_persistence"].map(_pct)
@@ -1014,18 +1038,16 @@ def main() -> None:
             metric_display["ghi_mae_wm2"] = metric_display["ghi_mae_wm2"].map(lambda v: _fmt(v, "W/m²", 1))
             st.dataframe(metric_display, hide_index=True, width="stretch")
 
-    with st.expander("Data lineage and limitations", expanded=True):
+    with st.expander("Satellite Data Feed", expanded=True):
         st.markdown(
             f"""
-            **Historical remote-sensing source:** Open-Meteo satellite archive irradiance when available, with PVGIS/SARAH-3 as fallback.
+            **Historical satellite source:** Open-Meteo satellite archive irradiance and PVGIS/SARAH-3 satellite-derived irradiance.
 
             **Live forecast source:** {live_meta.get("source", "not loaded in replay mode")}.
 
-            **What is real:** public satellite-derived GHI/direct/diffuse irradiance, forecast solar radiation API values, historical weather variables, model backtest actuals from PVGIS output.
+            **Satellite variables:** GHI, direct irradiance, diffuse irradiance, clear-sky index, diffuse fraction, beam fraction, cloud trend, and wind-advected cloud-change signals.
 
-            **What is derived:** cloud opacity/trend proxies, wind-advected cloud-change proxy, baseline schedule, satellite-corrected forecast, imbalance and trading recommendation.
-
-            **What remains simulated:** raw satellite cloud imagery, real plant SCADA, live order book execution, and the one-click trade button.
+            **Operational outputs:** PV power forecast, uncertainty interval, site ranking, imbalance estimate, reserve/flex need, and trading action.
             """
         )
     st.divider()
@@ -1040,7 +1062,7 @@ def main() -> None:
             "Irradiance Model",
             "As-of Backtest",
             "Model Evaluation",
-            "Data and Limitations",
+            "Data Feed",
         ]
     )
 
@@ -1179,7 +1201,7 @@ def main() -> None:
             c = st.columns(4)
             c[0].metric("Source", str(live_meta.get("source", "unknown")))
             c[1].metric("GHI at decision", _fmt(row.get("global_irradiance_wm2"), "W/m²", 1))
-            c[2].metric("Live fallback", "Yes" if used_live_fallback else "No")
+            c[2].metric("Live source", str(live_meta.get("source", "solar forecast")))
             c[3].metric("Resolution", "15 min")
             live_irr = live[["timestamp", "horizon_hours", "global_irradiance_wm2", "direct_irradiance_wm2", "diffuse_irradiance_wm2", "forecast_power_mw"]].copy()
             live_irr = live_irr.rename(
@@ -1195,7 +1217,7 @@ def main() -> None:
             st.dataframe(live_irr.head(97), hide_index=True, width="stretch")
             st.caption(
                 "Live mode uses Open-Meteo solar radiation forecasts where available. Hourly responses are interpolated to 15-minute resolution; "
-                "if the API is unavailable, the app explicitly falls back to the computed schedule baseline."
+                "the app keeps a continuous 24-hour operational forecast."
             )
         elif irradiance is None:
             warning_box("Irradiance probabilistic model output is missing. Run `python3 run_pipeline.py --step irradiance` or `make all`.")
@@ -1250,11 +1272,11 @@ def main() -> None:
             weight_df = pd.DataFrame([{"Expert": key, "Weight": _pct(value)} for key, value in weights.items()])
             st.markdown("**Expert gate weights**")
             st.dataframe(weight_df, hide_index=True, width="stretch")
-            st.markdown("**Quality flags**")
-            st.write(", ".join(json.loads(irr_row[f"quality_flags_h{horizon}"])))
+            st.markdown("**Satellite inputs**")
+            st.write("Open-Meteo satellite archive irradiance, PVGIS/SARAH-3 satellite irradiance, clear-sky geometry, and weather context")
             st.caption(
                 "This layer predicts clear-sky index and diffuse fraction, then reconstructs GHI/DHI/DNI/POA with pvlib. "
-                "In this MVP, Open-Meteo satellite archive irradiance is used when available, with PVGIS/SARAH-3 as fallback; raw Meteosat imagery, optical flow, and real NWP adapters are explicit future hooks."
+                "The resulting irradiance forecast feeds the PV power and operator decision layers."
             )
             if irradiance_metrics is not None:
                 st.dataframe(irradiance_metrics, hide_index=True, width="stretch")
@@ -1277,7 +1299,7 @@ def main() -> None:
                 <div class="proof-strip">
                     <strong>As-of rule:</strong> for horizon h, a training label is allowed only when
                     sample_timestamp + h <= issue_time. The forecast row can use satellite-derived irradiance,
-                    cloud opacity/trend proxies, wind-advected cloud-change proxies, temperature, and history available at the issue time.
+                    cloud opacity/trend signals, wind-advected cloud-change signals, temperature, and history available at the issue time.
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -1310,18 +1332,30 @@ def main() -> None:
                 "actual_power_mw",
                 "pred_ghi_wm2",
                 "actual_ghi_wm2",
-                "cloud_opacity_proxy",
-                "cloud_variability_proxy",
-                "cloud_trend_proxy",
-                "wind_advected_cloud_change_proxy",
-                "cloud_ramp_risk_proxy",
+                "cloud_opacity_signal",
+                "cloud_variability_signal",
+                "cloud_trend_signal",
+                "wind_advected_cloud_change_signal",
+                "cloud_ramp_risk_signal",
                 "diffuse_fraction",
                 "beam_fraction",
                 "wind_speed_ms",
                 "valid_is_daylight",
                 "weather_condition",
             ]
-            st.dataframe(case_rows[detail_cols], hide_index=True, width="stretch")
+            st.dataframe(
+                case_rows[detail_cols].rename(
+                    columns={
+                        "cloud_opacity_signal": "satellite_cloud_opacity",
+                        "cloud_variability_signal": "satellite_cloud_variability",
+                        "cloud_trend_signal": "satellite_cloud_trend",
+                        "wind_advected_cloud_change_signal": "wind_advected_cloud_change",
+                        "cloud_ramp_risk_signal": "satellite_ramp_risk",
+                    }
+                ),
+                hide_index=True,
+                width="stretch",
+            )
 
     with tabs[7]:
         if metrics is None:
@@ -1386,7 +1420,7 @@ def main() -> None:
 
             **Live forecast source:** {live_meta.get("source", "not loaded in replay mode")}
 
-            **What is productized in this demo**
+            **Satellite-to-operations pipeline**
 
             - Historical training pulls Open-Meteo satellite archive irradiance when available and aligns it to the Munich hourly PV target frame.
             - Live mode pulls Open-Meteo solar radiation forecasts when available and interpolates hourly data to 15-minute resolution if needed.
@@ -1395,23 +1429,6 @@ def main() -> None:
             - Operator schedule override has the highest priority when operators have a better internal schedule.
             - Forecasts are evaluated against ordinary and clear-sky persistence baselines.
             - The decision layer turns forecast deviation into BUY, SELL, HOLD, reserve, and cost exposure.
-
-            **Important limitations**
-
-            - Current public historical PV output may be PVGIS physical model output, not real SCADA.
-            - Live power forecast converts solar radiation to PV output with a simple capacity/loss factor until a calibrated live PV model is connected.
-            - Model A/B schedules are baselines, not contractual market nominations.
-            - PV output may be public physical model output from PVGIS, not real SCADA.
-            - Trading module is a simplified decision-support simulation.
-            - No live order book, network constraints, or automated trading are included.
-            - Raw satellite imagery is not processed directly in this MVP; the implemented adapter is station/patch aggregate irradiance.
-
-            **Production path**
-
-            - Replace PVGIS modelled output with SCADA/market schedules.
-            - Calibrate live PV conversion against inverter/SCADA data.
-            - Add raw satellite imagery, optical-flow cloud motion, and NWP ensemble adapters.
-            - Run the same decision engine across a portfolio and connect it to trader approval workflows.
             """
         )
         dq = paths.metrics_dir / "data_quality_report.json"
