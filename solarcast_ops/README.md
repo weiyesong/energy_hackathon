@@ -39,7 +39,9 @@ flowchart LR
 
 ## Data Source
 
-Primary source: European Commission JRC PVGIS 5.3 hourly API (`seriescalc`) using SARAH-3 satellite-derived irradiance where available.
+Primary irradiance source: Open-Meteo satellite radiation archive for station-level GHI/direct/diffuse irradiance where available.
+
+Fallback and target source: European Commission JRC PVGIS 5.3 hourly API (`seriescalc`) using SARAH-3 satellite-derived irradiance and modelled PV output.
 
 The unified data schema includes:
 
@@ -53,7 +55,7 @@ The unified data schema includes:
 - `solar_elevation_deg`
 - `data_source`
 
-PVGIS PV power is public modelled PV output for the configured system. It is **not real plant SCADA**.
+PVGIS PV power is public modelled PV output for the configured system. It is **not real plant SCADA**. When Open-Meteo satellite archive data is available, the pipeline keeps PVGIS power as the PV target/proxy and replaces the irradiance inputs with Open-Meteo satellite archive radiation matched by hour.
 
 Fallback behavior:
 
@@ -93,6 +95,7 @@ python3 run_pipeline.py --step train
 python3 run_pipeline.py --step irradiance
 python3 run_pipeline.py --step evaluate
 python3 run_pipeline.py --step demo
+python3 run_pipeline.py --step asof
 ```
 
 Force refresh where supported:
@@ -104,6 +107,13 @@ python3 run_pipeline.py --step all --force
 Dashboard:
 
 ```bash
+python3 -m streamlit run app/dashboard.py
+```
+
+Recommended demo path:
+
+```bash
+python3 run_pipeline.py --step all
 python3 -m streamlit run app/dashboard.py
 ```
 
@@ -254,7 +264,7 @@ The demo also includes a modular irradiance forecasting layer inspired by the mu
 - POA irradiance via pvlib using the configured panel tilt and azimuth
 - JSON, CSV, and optional Parquet forecast outputs
 
-Current MVP limitation: this layer uses PVGIS hourly satellite-derived irradiance as a proxy input. It does not yet consume raw Meteosat image patches, optical-flow cloud motion, or real NWP forecast runs. The NWP adapter is intentionally marked unavailable, and the Dashboard exposes that quality flag. If PyTorch is unavailable, the code falls back to quantile gradient boosting so the demo still runs, but the default container path installs and uses PyTorch.
+Current MVP limitation: this layer uses station-level Open-Meteo satellite archive irradiance when available, with PVGIS/SARAH-3 as a satellite-derived proxy fallback. It does not yet consume raw Meteosat image patches, optical-flow cloud motion, or real NWP forecast runs. The NWP adapter is intentionally marked unavailable, and the Dashboard exposes that quality flag. If PyTorch is unavailable, the code falls back to quantile gradient boosting so the demo still runs, but the default container path installs and uses PyTorch.
 
 ## Trading Decision Logic
 
@@ -305,15 +315,16 @@ Upward ramp flexibility:
 recommended_downward_flexibility_mw = max(0, forecast_p90_mw - current_power_mw)
 ```
 
-## Dashboard Screenshot Placeholder
+## Dashboard Evidence
 
-After running the app, capture screenshots of:
+The Streamlit app opens with an operator command center that keeps the challenge evidence visible:
 
-- Operation Overview
-- Forecast
-- Trading Decision
-- Grid Risk
-- Model Evaluation
+- Persistence benchmark: daylight forecast skill against ordinary and clear-sky persistence.
+- Satellite signal: current irradiance, cloud proxy state, and data source lineage.
+- Operational output: BUY, SELL, or HOLD action with imbalance, cost exposure, and reserve/flex need.
+- Good-vs-bad sites: portfolio rows ranked by action need, ramp risk, schedule deviation, and avoided cost.
+- Strict as-of backtest: replay validation where labels after the issue time are blocked.
+- Data limitations: satellite-derived proxy status, non-SCADA PV output, and simulated trade execution are called out in the app.
 
 ## Current Limitations
 
@@ -322,7 +333,7 @@ After running the app, capture screenshots of:
 - The dashboard uses historical replay, not live operations.
 - Current trading module is simplified and does not include real order books.
 - No network constraints, unit commitment, or power flow model.
-- Raw satellite imagery is not directly processed yet.
+- Raw satellite imagery is not directly processed yet; the implemented archive adapter works at station/patch aggregate irradiance level.
 - Model performance is reported honestly; the product does not assume satellite-informed ML always beats every baseline.
 
 ## Future Upgrade Roadmap

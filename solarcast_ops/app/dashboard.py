@@ -205,20 +205,33 @@ def _portfolio_preview(
         )
         grid = assess_grid_risk(current, p10, p50, p90, capacity, horizon, ramp_threshold_fraction)
         signed_trade = trading.recommended_trade_mwh if trading.action == "BUY" else -trading.recommended_trade_mwh if trading.action == "SELL" else 0.0
+        quality = "Good"
+        if grid.ramp_risk_level == "High" or trading.action != "HOLD":
+            quality = "Bad / action needed"
+        elif grid.ramp_risk_level == "Medium" or abs(trading.expected_deviation_mwh) >= min_trade * 0.5:
+            quality = "Watch"
         rows.append(
             {
                 "Site": asset["site"],
                 "Capacity": _fmt(capacity, "MW", 1),
+                "Status": quality,
                 "Risk": grid.ramp_risk_level,
                 "Action": trading.action,
                 "Trade": _fmt(trading.recommended_trade_mwh, "MWh"),
+                "Current": _fmt(current, "MW"),
+                "Forecast": _fmt(p50, "MW"),
+                "Schedule": _fmt(schedule, "MW"),
                 "Signed trade MWh": signed_trade,
                 "Expected imbalance": _fmt(trading.expected_deviation_mwh, "MWh"),
                 "Avoided cost": _fmt_eur(max(0.0, trading.estimated_avoided_cost_eur)),
                 "Avoided cost EUR": max(0.0, trading.estimated_avoided_cost_eur),
+                "Sort score": (
+                    (2 if quality == "Bad / action needed" else 1 if quality == "Watch" else 0) * 1_000_000
+                    + max(0.0, trading.estimated_avoided_cost_eur)
+                ),
             }
         )
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows).sort_values("Sort score", ascending=False).reset_index(drop=True)
 
 
 def _forecast_figure(
@@ -891,6 +904,8 @@ def main() -> None:
     portfolio_avoided = float(portfolio["Avoided cost EUR"].sum())
     portfolio_action = "BUY" if portfolio_net_trade > 0 else "SELL" if portfolio_net_trade < 0 else "HOLD"
     portfolio_trade_label = _fmt(abs(portfolio_net_trade), "MWh")
+    portfolio_bad = int((portfolio["Status"] == "Bad / action needed").sum())
+    portfolio_watch = int((portfolio["Status"] == "Watch").sum())
     skill_label = "Backtest skill proxy" if is_live_mode else "Skill vs Persistence"
 
     if is_synthetic:
@@ -898,6 +913,22 @@ def main() -> None:
 
     st.markdown("### Solar Operations Command Center")
     st.caption("From satellite-derived weather signal to generation forecast to market action.")
+    proof_cols = st.columns(5)
+    proof_cols[0].metric("Action", trading.action)
+    proof_cols[1].metric("Trade size", _fmt(trading.recommended_trade_mwh, "MWh"))
+    proof_cols[2].metric(skill_label, _pct(daylight_skill), f"+{horizon}h daylight")
+    proof_cols[3].metric("Skill vs clear-sky persistence", _pct(clear_sky_skill))
+    proof_cols[4].metric("Sites needing action", str(portfolio_bad), f"{portfolio_watch} watch")
+    st.markdown(
+        f"""
+        <div class="proof-strip">
+            <strong>Persistence benchmark:</strong> at +{horizon}h daylight, the satellite-informed model reports {_pct(daylight_skill)}
+            MAE skill versus ordinary persistence and {_pct(clear_sky_skill)} versus clear-sky persistence.
+            The current decision compares a {_fmt(p50, "MW")} forecast against a {_fmt(scheduled_power, "MW")} delivery schedule.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     left, right = st.columns([0.43, 0.57], gap="large")
     with left:
         st.markdown("#### 1. Situation Awareness")
@@ -951,7 +982,15 @@ def main() -> None:
         if st.button("Simulate one-click order", type="primary", disabled=trading.action == "HOLD"):
             st.success(f"Simulated {trading.action} order prepared for {_fmt(trading.recommended_trade_mwh, 'MWh')}.")
 
-    with st.expander("Validation evidence: strict as-of backtest", expanded=False):
+    st.markdown("#### 4. Good vs Bad Sites")
+    site_display = portfolio.drop(columns=["Signed trade MWh", "Avoided cost EUR", "Sort score"])
+    st.dataframe(site_display, hide_index=True, width="stretch")
+    st.caption(
+        "Good/watch/bad status is derived from the selected satellite-informed signal, ramp risk, schedule deviation, and simulated avoided cost. "
+        "Rows are sorted by operational urgency."
+    )
+
+    with st.expander("Validation evidence: strict as-of backtest", expanded=True):
         if asof is None or asof_metrics is None:
             warning_box("As-of backtest output is missing. Run `python3 run_pipeline.py --step asof`.")
         else:
@@ -975,21 +1014,21 @@ def main() -> None:
             metric_display["ghi_mae_wm2"] = metric_display["ghi_mae_wm2"].map(lambda v: _fmt(v, "W/m²", 1))
             st.dataframe(metric_display, hide_index=True, width="stretch")
 
-    with st.expander("Data lineage and limitations", expanded=False):
+    with st.expander("Data lineage and limitations", expanded=True):
         st.markdown(
             f"""
-            **Historical remote-sensing source:** PVGIS/SARAH-3 satellite-derived irradiance and modelled PV output.
+            **Historical remote-sensing source:** Open-Meteo satellite archive irradiance when available, with PVGIS/SARAH-3 as fallback.
 
             **Live forecast source:** {live_meta.get("source", "not loaded in replay mode")}.
 
-            **What is real:** public satellite-derived GHI/DNI/DHI, forecast solar radiation API values, historical weather variables, model backtest actuals from PVGIS output.
+            **What is real:** public satellite-derived GHI/direct/diffuse irradiance, forecast solar radiation API values, historical weather variables, model backtest actuals from PVGIS output.
 
             **What is derived:** cloud opacity/trend proxies, wind-advected cloud-change proxy, baseline schedule, satellite-corrected forecast, imbalance and trading recommendation.
 
             **What remains simulated:** raw satellite cloud imagery, real plant SCADA, live order book execution, and the one-click trade button.
             """
         )
-    return
+    st.divider()
 
     tabs = st.tabs(
         [
@@ -1110,7 +1149,7 @@ def main() -> None:
         c[2].metric("Portfolio avoided cost", _fmt_eur(portfolio_avoided))
         c[3].metric("High-risk assets", str(int((portfolio["Risk"] == "High").sum())))
         st.dataframe(
-            portfolio.drop(columns=["Signed trade MWh", "Avoided cost EUR"]),
+            portfolio.drop(columns=["Signed trade MWh", "Avoided cost EUR", "Sort score"]),
             hide_index=True,
             width="stretch",
         )
@@ -1215,7 +1254,7 @@ def main() -> None:
             st.write(", ".join(json.loads(irr_row[f"quality_flags_h{horizon}"])))
             st.caption(
                 "This layer predicts clear-sky index and diffuse fraction, then reconstructs GHI/DHI/DNI/POA with pvlib. "
-                "In this MVP, PVGIS hourly irradiance is used as a satellite-derived proxy; raw Meteosat imagery, optical flow, and real NWP adapters are explicit future hooks."
+                "In this MVP, Open-Meteo satellite archive irradiance is used when available, with PVGIS/SARAH-3 as fallback; raw Meteosat imagery, optical flow, and real NWP adapters are explicit future hooks."
             )
             if irradiance_metrics is not None:
                 st.dataframe(irradiance_metrics, hide_index=True, width="stretch")
@@ -1349,6 +1388,7 @@ def main() -> None:
 
             **What is productized in this demo**
 
+            - Historical training pulls Open-Meteo satellite archive irradiance when available and aligns it to the Munich hourly PV target frame.
             - Live mode pulls Open-Meteo solar radiation forecasts when available and interpolates hourly data to 15-minute resolution if needed.
             - Model A builds an explainable multiplicative seasonal schedule from historical power.
             - Model B builds a LightGBM schedule baseline from historical same-time and recent trend features.
@@ -1364,7 +1404,7 @@ def main() -> None:
             - PV output may be public physical model output from PVGIS, not real SCADA.
             - Trading module is a simplified decision-support simulation.
             - No live order book, network constraints, or automated trading are included.
-            - Raw satellite imagery is not processed directly in this MVP.
+            - Raw satellite imagery is not processed directly in this MVP; the implemented adapter is station/patch aggregate irradiance.
 
             **Production path**
 

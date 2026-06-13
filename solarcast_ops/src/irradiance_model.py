@@ -354,7 +354,11 @@ def _expert_weights(row: pd.Series, horizon: int) -> dict[str, float]:
 
 
 def _quality_flags(row: pd.Series, horizon: int) -> list[str]:
-    flags = ["pvgis_satellite_proxy_not_raw_imagery", "nwp_unavailable_demo_adapter"]
+    flags = ["station_level_satellite_irradiance", "not_raw_meteosat_imagery", "nwp_unavailable_demo_adapter"]
+    if bool(row.get("satellite_archive_available", False)):
+        flags.append("openmeteo_satellite_archive")
+    else:
+        flags.append("pvgis_satellite_proxy_fallback")
     if bool(row.get(f"night_flag_h{horizon}", False)):
         flags.append("night_or_low_sun")
     if float(row.get("clear_sky_index", 0.0)) > 1.0:
@@ -500,7 +504,7 @@ def train_irradiance_model(features_df: pd.DataFrame, config: dict[str, Any]) ->
     metadata = {
         "model_family": config["irradiance_model"]["model_family"],
         "implementation": implementation,
-        "note": "MVP uses PVGIS hourly satellite-derived irradiance proxy. Raw Meteosat image patches, optical flow, and real NWP adapters are not yet connected.",
+        "note": "MVP uses station-level Open-Meteo satellite archive irradiance when available, with PVGIS/SARAH-3 as a satellite-derived proxy fallback. Raw Meteosat image patches, optical flow, and real NWP adapters are not yet connected.",
         "split": split_meta,
         "adapter_status": [asdict(status) for status in statuses],
         "features": IRRADIANCE_FEATURES,

@@ -14,12 +14,13 @@ site:
   system_loss_percent: 14
 
 data:
-  start_year: 2023
-  end_year: 2025
+  start_year: 2019
+  end_year: 2023
   validation_start: "2026-01-01"
   timezone: Europe/Berlin
   cache_enabled: true
   allow_synthetic_fallback: true
+  use_openmeteo_satellite_archive: true
   api_timeout_seconds: 30
   pvgis_base_url: https://re.jrc.ec.europa.eu/api/v5_3/seriescalc
   pvgis_radiation_database: PVGIS-SARAH3

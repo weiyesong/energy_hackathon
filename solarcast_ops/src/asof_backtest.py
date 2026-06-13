@@ -347,7 +347,8 @@ def run_asof_backtest(
             for case in cases
         ],
         "remote_sensing_proxies": [
-            "PVGIS/SARAH-3 satellite-derived GHI/DNI/DHI",
+            "Open-Meteo satellite archive GHI/direct/diffuse radiation when available",
+            "PVGIS/SARAH-3 satellite-derived irradiance fallback",
             "clear_sky_index as cloud opacity proxy",
             "diffuse_fraction and beam_fraction as cloud/sky-condition proxies",
             "irradiance rolling variability and ramp as cloud-motion proxy",

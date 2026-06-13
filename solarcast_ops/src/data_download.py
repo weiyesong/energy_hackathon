@@ -66,6 +66,9 @@ UNIFIED_COLUMNS = [
     "wind_speed_ms",
     "solar_elevation_deg",
     "data_source",
+    "irradiance_source",
+    "pv_power_source",
+    "satellite_archive_available",
     "is_synthetic",
 ]
 
@@ -177,8 +180,16 @@ def download_openmeteo_forecast(lat: float, lon: float) -> pd.DataFrame:
     return _write_csv(df, get_paths().raw_dir / "openmeteo_forecast_munich.csv")
 
 
-def download_openmeteo_satellite_radiation(lat: float, lon: float, start_date: str, end_date: str) -> pd.DataFrame:
-    """Download Open-Meteo satellite radiation archive data where available."""
+def download_openmeteo_satellite_radiation(
+    lat: float,
+    lon: float,
+    start_date: str,
+    end_date: str,
+    tilt: float = 35,
+    azimuth: float = 0,
+    timeout_seconds: int | None = None,
+) -> pd.DataFrame:
+    """Download Open-Meteo satellite radiation archive data for a site patch."""
     variables = [
         "shortwave_radiation",
         "direct_radiation",
@@ -200,9 +211,81 @@ def download_openmeteo_satellite_radiation(lat: float, lon: float, start_date: s
         start_date=start_date,
         end_date=end_date,
         block="hourly",
-        extra_params={"tilt": 35, "azimuth": 0, "temporal_resolution": "native"},
+        extra_params={"tilt": float(tilt), "azimuth": float(azimuth), "temporal_resolution": "native"},
+        timeout_seconds=timeout_seconds,
     )
     return _write_csv(df, get_paths().raw_dir / "openmeteo_satellite_radiation_munich.csv")
+
+
+def _standardize_openmeteo_satellite_radiation(df: pd.DataFrame) -> pd.DataFrame:
+    """Map Open-Meteo satellite archive fields to the project irradiance schema."""
+    data = df.copy()
+    data["timestamp"] = pd.to_datetime(data["timestamp"], utc=True, errors="coerce")
+    out = pd.DataFrame()
+    out["satellite_hour"] = data["timestamp"].dt.floor("h")
+
+    def first_available(candidates: list[str]) -> pd.Series:
+        for candidate in candidates:
+            if candidate in data:
+                return pd.to_numeric(data[candidate], errors="coerce")
+        return pd.Series(np.nan, index=data.index)
+
+    out["satellite_global_irradiance_wm2"] = first_available(["shortwave_radiation", "shortwave_radiation_instant"])
+    out["satellite_direct_irradiance_wm2"] = first_available(["direct_radiation", "direct_radiation_instant"])
+    out["satellite_diffuse_irradiance_wm2"] = first_available(["diffuse_radiation", "diffuse_radiation_instant"])
+    out["satellite_dni_wm2"] = first_available(["direct_normal_irradiance", "direct_normal_irradiance_instant"])
+    out["satellite_gti_wm2"] = first_available(["global_tilted_irradiance", "global_tilted_irradiance_instant"])
+    if "is_day" in data:
+        out["satellite_is_day"] = pd.to_numeric(data["is_day"], errors="coerce")
+    return out.dropna(subset=["satellite_hour"]).drop_duplicates("satellite_hour", keep="last")
+
+
+def merge_openmeteo_satellite_archive(base: pd.DataFrame, satellite: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Attach station-level Open-Meteo satellite irradiance to the unified PV target frame."""
+    if base.empty or satellite.empty:
+        return base.copy(), {"matched_rows": 0, "coverage": 0.0, "used": False}
+
+    out = base.copy()
+    out["timestamp"] = pd.to_datetime(out["timestamp"], utc=True, errors="coerce")
+    out["_satellite_hour"] = out["timestamp"].dt.floor("h")
+    sat = _standardize_openmeteo_satellite_radiation(satellite)
+    merged = out.merge(sat, left_on="_satellite_hour", right_on="satellite_hour", how="left")
+
+    replacements = {
+        "global_irradiance_wm2": "satellite_global_irradiance_wm2",
+        "direct_irradiance_wm2": "satellite_direct_irradiance_wm2",
+        "diffuse_irradiance_wm2": "satellite_diffuse_irradiance_wm2",
+    }
+    available = merged[list(replacements.values())].notna().any(axis=1)
+    for target, source in replacements.items():
+        merged[target] = pd.to_numeric(merged[source], errors="coerce").combine_first(pd.to_numeric(merged[target], errors="coerce"))
+
+    merged["satellite_archive_available"] = available
+    merged["irradiance_source"] = np.where(
+        available,
+        "Open-Meteo satellite radiation archive",
+        merged.get("irradiance_source", "PVGIS/SARAH-3 satellite-derived proxy"),
+    )
+    merged["pv_power_source"] = merged.get("pv_power_source", "PVGIS modelled PV output")
+    merged["data_source"] = np.where(
+        available,
+        "Open-Meteo satellite radiation archive + PVGIS modelled PV output",
+        merged["data_source"],
+    )
+
+    drop_cols = [
+        "_satellite_hour",
+        "satellite_hour",
+        "satellite_global_irradiance_wm2",
+        "satellite_direct_irradiance_wm2",
+        "satellite_diffuse_irradiance_wm2",
+        "satellite_dni_wm2",
+        "satellite_gti_wm2",
+        "satellite_is_day",
+    ]
+    merged = merged.drop(columns=[col for col in drop_cols if col in merged])
+    coverage = float(available.mean()) if len(available) else 0.0
+    return merged, {"matched_rows": int(available.sum()), "coverage": coverage, "used": bool(available.any())}
 
 
 def download_pvgis_hourly(
@@ -462,6 +545,9 @@ def _parse_pvgis_response(payload: dict[str, Any]) -> pd.DataFrame:
     # PVGIS P is W for the requested system. Convert explicitly to MW.
     out["pv_power_mw"] = pd.to_numeric(out["pv_power_mw"], errors="coerce") / 1_000_000.0
     out["data_source"] = "PVGIS 5.3 SARAH-3 satellite-derived irradiance and modelled PV output"
+    out["irradiance_source"] = "PVGIS/SARAH-3 satellite-derived proxy"
+    out["pv_power_source"] = "PVGIS modelled PV output"
+    out["satellite_archive_available"] = False
     out["is_synthetic"] = False
     return out[UNIFIED_COLUMNS]
 
@@ -480,7 +566,7 @@ def _write_metadata(path: Path, config: dict[str, Any], source: str, params: dic
 
 
 def download_or_load_data(config: dict[str, Any], force: bool = False) -> pd.DataFrame:
-    """Fetch PVGIS hourly data, reuse cache, or create marked synthetic fallback."""
+    """Fetch PVGIS target data plus satellite archive irradiance, reuse cache, or fall back explicitly."""
     paths = get_paths()
     processed_path = paths.processed_dir / "unified_hourly.csv"
     metadata_path = paths.processed_dir / "data_metadata.json"
@@ -499,7 +585,48 @@ def download_or_load_data(config: dict[str, Any], force: bool = False) -> pd.Dat
         payload = response.json()
         raw_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         df = _parse_pvgis_response(payload)
-        _write_metadata(metadata_path, config, "PVGIS 5.3", params, {"raw_response_path": str(raw_path)})
+        metadata_extra: dict[str, Any] = {"raw_response_path": str(raw_path)}
+        if config["data"].get("use_openmeteo_satellite_archive", True):
+            try:
+                times = pd.to_datetime(df["timestamp"], utc=True, errors="coerce").dropna()
+                if times.empty:
+                    raise ValueError("PVGIS frame has no valid timestamps for satellite archive alignment")
+                start_date = times.min().date().isoformat()
+                end_date = times.max().date().isoformat()
+                satellite = download_openmeteo_satellite_radiation(
+                    float(config["site"]["latitude"]),
+                    float(config["site"]["longitude"]),
+                    start_date,
+                    end_date,
+                    tilt=float(config["site"].get("tilt_deg", 35)),
+                    azimuth=float(config["site"].get("azimuth_deg", 0)),
+                    timeout_seconds=int(config["data"].get("api_timeout_seconds", 30)),
+                )
+                df, satellite_meta = merge_openmeteo_satellite_archive(df, satellite)
+                metadata_extra["openmeteo_satellite_archive"] = {
+                    "source": OPENMETEO_SATELLITE_URL,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    **satellite_meta,
+                }
+                LOGGER.info(
+                    "Attached Open-Meteo satellite archive irradiance: %s matched rows (%.1f%% coverage)",
+                    satellite_meta["matched_rows"],
+                    satellite_meta["coverage"] * 100,
+                )
+            except Exception as sat_exc:
+                LOGGER.warning("Open-Meteo satellite archive unavailable; keeping PVGIS irradiance proxy: %s", sat_exc)
+                metadata_extra["openmeteo_satellite_archive"] = {
+                    "source": OPENMETEO_SATELLITE_URL,
+                    "used": False,
+                    "fallback_reason": str(sat_exc),
+                }
+        source_name = (
+            "Open-Meteo satellite archive + PVGIS modelled PV"
+            if bool(pd.Series(df.get("satellite_archive_available", False)).fillna(False).astype(bool).any())
+            else "PVGIS 5.3"
+        )
+        _write_metadata(metadata_path, config, source_name, params, metadata_extra)
         LOGGER.info("Using data source: PVGIS 5.3 SARAH-3")
     except Exception as exc:
         LOGGER.exception("PVGIS download failed: %s", exc)
@@ -509,6 +636,9 @@ def download_or_load_data(config: dict[str, Any], force: bool = False) -> pd.Dat
         if not config["data"].get("allow_synthetic_fallback", True):
             raise
         df = generate_synthetic_demo_data(config)
+        df["irradiance_source"] = "synthetic demo irradiance"
+        df["pv_power_source"] = "synthetic demo PV output"
+        df["satellite_archive_available"] = False
         raw_path.write_text(df.to_json(orient="records", date_format="iso"), encoding="utf-8")
         _write_metadata(
             metadata_path,

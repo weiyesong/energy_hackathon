@@ -27,10 +27,10 @@ class ForecastDataAdapter(Protocol):
         """Attach adapter fields without using data after forecast issue time."""
 
 
-class PVGISSatelliteProxyAdapter:
-    """Hourly PVGIS irradiance adapter used as a satellite-derived proxy in the MVP."""
+class SatelliteArchiveAdapter:
+    """Station-level satellite-derived irradiance adapter for the MVP."""
 
-    name = "pvgis_hourly_proxy"
+    name = "openmeteo_satellite_archive_or_pvgis_proxy"
 
     def status(self) -> AdapterStatus:
         return AdapterStatus(
@@ -38,12 +38,23 @@ class PVGISSatelliteProxyAdapter:
             available=True,
             source_issue_time_column="timestamp",
             source_latency_minutes=0.0,
-            quality_flags=["satellite_irradiance_proxy", "not_raw_meteosat_imagery"],
+            quality_flags=[
+                "station_level_satellite_irradiance",
+                "openmeteo_archive_when_available",
+                "pvgis_proxy_fallback",
+                "not_raw_meteosat_imagery",
+            ],
         )
 
     def attach(self, frame: pd.DataFrame) -> pd.DataFrame:
         out = frame.copy()
-        out["satellite_available"] = out["global_irradiance_wm2"].notna()
+        archive_available = (
+            out["satellite_archive_available"].fillna(False).astype(bool)
+            if "satellite_archive_available" in out
+            else pd.Series(False, index=out.index)
+        )
+        out["satellite_available"] = archive_available | out["global_irradiance_wm2"].notna()
+        out["satellite_archive_available"] = archive_available
         out["satellite_latency_minutes"] = 0.0
         return out
 
@@ -93,7 +104,7 @@ class UnavailableNWPAdapter:
 def attach_demo_adapters(frame: pd.DataFrame) -> tuple[pd.DataFrame, list[AdapterStatus]]:
     """Attach MVP adapter metadata and missing-input masks."""
     adapters: list[ForecastDataAdapter] = [
-        PVGISSatelliteProxyAdapter(),
+        SatelliteArchiveAdapter(),
         GroundProxyAdapter(),
         UnavailableNWPAdapter(),
     ]
