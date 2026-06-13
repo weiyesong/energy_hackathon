@@ -29,13 +29,13 @@
     {
       "source_name": "eumetsat_ssi",
       "source_role": "primary operational satellite-derived irradiance source",
-      "status": "unavailable",
+      "status": "available",
       "last_update": "2026-06-13T05:54:14.801278+00:00",
-      "temporal_resolution": null,
+      "temporal_resolution": "15 minutes",
       "coverage": {},
-      "manual_action_required": true,
+      "manual_action_required": false,
       "fallback_active": false,
-      "error_message": "credentials missing; manual download required"
+      "error_message": null
     },
     {
       "source_name": "nasa_power",

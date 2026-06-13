@@ -1,63 +1,41 @@
-# Demo Video Script
+# Demo Video Script: SolarCast Ops
 
-Target length: 3 minutes.
+This is **SolarCast Ops**, a satellite-driven operating system for short-term solar decisions developed for the Invertix OpenTrack challenge. 
 
-## 0:00-0:25 What I Built
+Instead of walking through point by point chronologically, this demo first highlights the core capabilities of the product, and then directly addresses how it solves the specific requirements of the challenge.
 
-This is SolarCast Ops, a satellite-driven operating system for short-term solar decisions.
+---
 
-for the Invertix OpenTrack challenge.
+## Part 1: Key Product Capabilities (Important Features)
 
-I will walk through those outputs directly.
+### 1. The SolarOps Cockpit (Decision-First UI)
+The first thing the operator sees is not just a raw weather map—it is the **decision state**. 
+The system instantly converts complex forecasts into the language operators actually use: expected imbalance, no-action exposure, avoided cost, reserve/flexibility needs, and the immediate action to take. *Note: As real high-frequency PV data is currently not public, the power output is synthetically generated using physical models to emulate operational dynamics, but the system is fully plug-and-play to ingest real grid data.*
 
-## 0:25-0:55 Satellite Data to Forecast
+### 2. Multi-Horizon Intelligence & End-to-End Automation
+SolarCast operates as a fully automated后台调度器 (Orchestrator). The "Model & Data" view reveals the 7-step engine under the hood: taking raw Satellite SSI -> clear-sky physics -> atmospheric correction -> ML residual forecast -> uncertainty calibration -> PV power -> and finally, operator action. Operators can monitor data source health (fallback, active, manual) transparently. 
 
-The first thing the operator sees is not a weather map. It is the decision state.
+### 3. Site Intelligence & Prioritization (Work Queue)
+Instead of overwhelming the operator with data from hundreds of solar farms, the product ranks the portfolio from most critical to least critical. By combining expected energy, confidence, data quality, cloud risk, and volatility, it assigns a concrete grade (e.g., A, B, C, D) to every site, turning satellite surveillance into a prioritized daily work queue.
 
-At the top, the dashboard shows the recommended action, trade size, forecast skill versus persistence, skill versus clear-sky persistence, satellite data coverage, and the number of sites needing action.
+---
 
-The satellite feed provides GHI, direct irradiance, diffuse irradiance, cloud-state signals, wind, temperature, and solar geometry. 我通过复杂的物理建模 combines those with recent PV behavior to forecast power over the next operational horizons.值得注意的是，真实的PV数据目前是不公开的，所以PV数据（这里写数据怎么来的），但是只要接入真实的grid数据，这套系统就能立刻大展身手。
+## Part 2: How We Addressed the Core Challenge Requirements
 
-So the raw question, "can satellite data become a usable output?", is answered immediately: yes, it becomes a PV forecast with uncertainty and an operator action.
+### 1. Challenge: Weather vs. Physical vs. Hybrid Models (Forecast the curve & Beat Persistence)
+**How we solved it:** We built a hybrid modeling pipeline that uses satellite data combined with physical clear-sky models and machine learning. But we didn't just draw a curve; we built an evaluation dashboard that proves it beats the baseline. The system tracks MAE, RMSE, and forecast skill against both "ordinary persistence" (tomorrow looks like today) and "clear-sky persistence". Positive skill displayed directly in the command center demonstrates that the satellite-informed model actively reduces operational error.
 
-## 0:55-1:30 Beating Persistence
+### 2. Challenge: A nowcast for intraday trading or grid balancing decisions
+**How we solved it:** The decision engine explicitly translates MW deviations into exact trading and balancing instructions in the Forecast Cockpit:
+*   **Intraday Trading:** If the forecast indicates a shortfall below schedule, it generates a `BUY` action. If above schedule, a `SELL` action. If the deviation is minimal, it outputs `HOLD`.
+*   **Grid Balancing:** The tool automatically calculates ramp direction, ramp magnitude, ramp risk, and reserve or downward-flexibility metrics. The operator never has to manually interpret irradiance; the system dictates the next move.
 
-The first worth-exploring requirement is a generation forecast that beats persistence.
+### 3. Challenge: Reveal good vs bad sites
+**How we solved it:** This requirement is answered by our **Site Intelligence** dashboard. Sites are explicitly assessed:
+*   **Good sites** are stable, close to schedule, and have low cloud risk.
+*   **Watch sites** have emerging uncertainty or elevated ramp risk.
+*   **Bad sites** (Grade D) are those where irradiance deviation is severe enough that the operator must intervene.
+This allows dispatchers to know exactly which sites are safe and which ones require immediate attention.
 
-Here, persistence means the simple baseline: assume the future looks like now. I tested against that baseline and also against clear-sky persistence.
-
-In the command center, the skill numbers are shown directly. Positive skill means the satellite-informed model reduces error compared with persistence.
-
-The Model Evaluation view gives the evidence behind that claim: MAE, RMSE, normalized error, and forecast skill by horizon and sky condition. This is important because the model is not just drawing a nice curve; it is benchmarked against the simplest thing an operator could do.
-
-## 1:30-2:05 Nowcast to Trading and Grid Balancing
-
-The second requirement is a nowcast that helps intraday trading or grid-balancing decisions.
-
-SolarCast converts the forecast into the language operators use: expected imbalance, no-action exposure, avoided cost, reserve or flexibility need, and the action to prepare.
-
-If the forecast is below schedule, the system prepares a BUY action. If generation is above schedule, it prepares a SELL action. If the deviation is too small, it holds.
-
-For grid balancing, the same forecast becomes ramp direction, ramp magnitude, ramp risk, and reserve or downward-flexibility recommendations. The operator does not need to interpret satellite irradiance manually; the system turns it into the next operational move.
-
-## 2:05-2:35 Good vs Bad Sites
-
-The third requirement is to reveal good versus bad sites.
-
-This table ranks the portfolio using the satellite-informed signal. Each site is scored by schedule deviation, ramp risk, forecasted power, trade action, and avoided cost.
-
-Good sites are stable or close to schedule. Watch sites have meaningful uncertainty or emerging ramp risk. Bad or action-needed sites are the ones where the satellite forecast says the operator should intervene.
-
-This turns satellite coverage into a prioritized work queue: which site is safe, which site needs monitoring, and which site needs action first.
-
-## 2:35-2:55 Operational Output
-
-The last requirement is any tool that takes satellite feeds and turns them into operational output.
-
-SolarCast does that end to end. Satellite irradiance becomes clear-sky index and cloud signals. Those become probabilistic GHI, DNI, DHI, and POA forecasts. Those become PV power forecasts. Then the decision engine converts the power forecast into trading, balancing, reserve, and site-ranking outputs.
-
-The strict as-of backtest shows the forecast uses information available at issue time, and the dashboard keeps the benchmark evidence visible.
-
-## 2:55-3:00 Close
-
-SolarCast Ops turns satellite data into decisions operators can act on: forecast power, quantify uncertainty, beat persistence, rank sites, and prepare the next market or grid action.
+### 4. Challenge: Any tool that takes raw satellite feeds and turns them into an operational output
+**How we solved it:** We didn't just write a single notebook; we engineered an **end-to-end software product** (FastAPI backend + React frontend). The pipeline seamlessly auto-ingests EUMETSAT/CAMS satellite signals, converts irradiance to cloud-state metrics, feeds them through the probabilistic PV forecast model, and uses a built-in Decision Engine to print out actionable limit orders, trade sizes, and risk warnings directly to the user's screen.

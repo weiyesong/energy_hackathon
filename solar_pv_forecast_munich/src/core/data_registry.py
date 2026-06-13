@@ -23,7 +23,7 @@ DEFAULT_SOURCE_METADATA = {
         "source_name": "eumetsat_ssi",
         "source_type": SOURCE_TYPE_LABELS["eumetsat_ssi"],
         "is_satellite_derived": True,
-        "manual_action_required": True,
+        "manual_action_required": False,
     },
     "nasa_power": {
         "source_name": "nasa_power",

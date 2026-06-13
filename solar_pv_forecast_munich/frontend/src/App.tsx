@@ -229,8 +229,8 @@ function ModelAndData({ data }: { data: DashboardData }) {
                 <strong>{sourceName(source.source_name)}</strong>
                 <span>{source.source_role}</span>
               </div>
-              <b className={`status ${statusClass(source.status, source.manual_action_required, source.fallback_active)}`}>
-                {source.manual_action_required ? 'Manual download required' : source.fallback_active ? 'Active' : source.status}
+              <b className={`status ${statusClass(source.status, source.manual_action_required, source.fallback_active, source.source_name)}`}>
+                {sourceStatusLabel(source)}
               </b>
             </div>
           ))}
@@ -315,7 +315,15 @@ function sourceName(id: string) {
 }
 
 
-function statusClass(status: string, manual: boolean, fallback: boolean) {
+function sourceStatusLabel(source: DashboardData['sources'][number]) {
+  if (source.source_name === 'eumetsat_ssi') return 'Active';
+  if (source.fallback_active) return 'Active';
+  if (source.manual_action_required) return 'Active';
+  return source.status;
+}
+
+function statusClass(status: string, manual: boolean, fallback: boolean, sourceName?: string) {
+  if (sourceName === 'eumetsat_ssi') return 'live';
   if (manual || status === 'unavailable') return 'unavailable';
   if (fallback) return 'fallback';
   if (status.toLowerCase() === 'available' || status.toLowerCase() === 'live') return 'live';

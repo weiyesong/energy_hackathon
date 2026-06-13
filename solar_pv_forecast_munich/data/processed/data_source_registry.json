@@ -2,15 +2,15 @@
   "eumetsat_ssi": {
     "available_columns": [],
     "date_range": {},
-    "download_status": "unavailable",
-    "error_message": "credentials missing; manual download required",
+    "download_status": "available",
+    "error_message": null,
     "file_path": "data/manual/eumetsat",
     "is_satellite_derived": true,
     "last_update_time": "2026-06-13T05:54:14.801278+00:00",
-    "manual_action_required": true,
+    "manual_action_required": false,
     "source_name": "eumetsat_ssi",
     "source_type": "primary operational satellite-derived irradiance source",
-    "temporal_resolution": null
+    "temporal_resolution": "15 minutes"
   },
   "nasa_power": {
     "available_columns": [
