@@ -13,7 +13,7 @@ This project is an end-to-end solar irradiance and photovoltaic power forecastin
 5. Convert irradiance forecasts into operational PV output forecasts.
 6. Estimate uncertainty for intraday energy decisions.
 7. Compare good and bad Munich-area site behavior.
-8. Produce operational recommendations for intraday trading and grid decisions.
+8. Produce operational recommendations for intraday trading and grid decisions
 
 ## Target Location
 
