@@ -13,6 +13,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import yaml
+import pvlib
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -23,6 +24,8 @@ from src.models.train_hybrid_lightgbm import _apply_physical_constraints
 from src.operations.decision_engine import build_operational_forecast, generate_operator_actions, save_operator_actions
 from src.operations.site_ranking import rank_sites, save_site_ranking
 from src.physics.clear_sky import compute_clear_sky_irradiance
+from src.physics.poa_model import compute_poa_quantiles
+from src.physics.pv_power_model import estimate_pv_power_quantiles
 from src.physics.solar_geometry import compute_solar_geometry
 from src.pipeline.source_health import inspect_source_health, write_source_status
 
@@ -54,6 +57,9 @@ def run_live_forecast(
 
     weather = _fetch_or_load_openmeteo_forecast(config_path, root)
     issue_time = _issue_time(weather)
+    current_state = build_live_current_state(config, weather, source_status, issue_time)
+    with (output / "current_state.json").open("w", encoding="utf-8") as f:
+        json.dump(current_state, f, indent=2, default=str)
     inference = build_live_inference_frame(config, weather, source_status, issue_time, root)
     probabilistic = predict_quantiles(inference, root / "outputs/models")
     operational = build_operational_forecast(probabilistic, config)
@@ -67,10 +73,87 @@ def run_live_forecast(
     save_site_ranking(ranking, summary, output)
 
     print(f"Saved live UI forecast: {output / 'forecast.csv'} ({len(operational)} rows)")
+    print(f"Saved live current state: {output / 'current_state.json'}")
     print(f"Saved live source status: {output / 'source_status.json'}")
     print(f"Saved live operator actions: {output / 'operator_actions.json'} ({len(actions)} actions)")
     print(f"Saved live site ranking: {output / 'site_ranking.csv'} ({len(ranking)} sites)")
     return operational, actions, ranking, source_status
+
+
+def build_live_current_state(
+    config: dict[str, Any],
+    weather: pd.DataFrame,
+    source_status: dict[str, Any],
+    issue_time: pd.Timestamp,
+) -> dict[str, Any]:
+    """Estimate current PV state per configured site from near-real-time Open-Meteo conditions."""
+    rows: list[dict[str, Any]] = []
+    weather_row = _nearest_weather_row(weather, issue_time)
+    for site in config.get("sites", []):
+        geometry = _target_solar_features(pd.Series([issue_time]), site).iloc[0]
+        cos_zenith = float(geometry["target_cos_zenith"])
+        ghi = _current_ghi(weather_row, geometry)
+        dni = _current_dni(weather_row, ghi, cos_zenith)
+        dhi = max(ghi - dni * max(cos_zenith, 0.0), 0.0)
+        frame = pd.DataFrame(
+            [
+                {
+                    "target_valid_time": issue_time,
+                    "target_solar_zenith": geometry["target_solar_zenith"],
+                    "target_solar_elevation": geometry["target_solar_elevation"],
+                    "target_solar_azimuth": geometry["target_solar_azimuth"],
+                    "target_cos_zenith": cos_zenith,
+                    "target_GHI_clear": geometry["target_GHI_clear"],
+                    "target_DNI_clear": geometry["target_DNI_clear"],
+                    "target_DHI_clear": geometry["target_DHI_clear"],
+                    "target_temperature_2m_forecast_proxy": weather_row.get("temperature_2m", np.nan),
+                    "horizon_minutes": 0,
+                    "GHI_P10_calibrated": ghi,
+                    "GHI_P50": ghi,
+                    "GHI_P90_calibrated": ghi,
+                    "DNI_P10_estimated": dni,
+                    "DNI_P50_estimated": dni,
+                    "DNI_P90_estimated": dni,
+                    "DHI_P10_estimated": dhi,
+                    "DHI_P50_estimated": dhi,
+                    "DHI_P90_estimated": dhi,
+                }
+            ]
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            poa = compute_poa_quantiles(
+                frame,
+                surface_tilt=float(config.get("pv_system", {}).get("surface_tilt", 35.0)),
+                surface_azimuth=float(config.get("pv_system", {}).get("surface_azimuth", 180.0)),
+                albedo=float(config.get("pv_system", {}).get("albedo_default", 0.2)),
+            )
+            pv = estimate_pv_power_quantiles(poa, config.get("pv_system", {}))
+        rows.append(
+            {
+                "site_id": site["id"],
+                "site_name": site["name"],
+                "timestamp": issue_time.isoformat(),
+                "current_ghi": float(ghi),
+                "current_poa": float(pv.iloc[0]["POA_P50"]),
+                "current_pv_output": float(pv.iloc[0]["PV_P50"]),
+                "current_module_temperature": float(pv.iloc[0]["module_temperature"]),
+                "current_cloud_cover": _as_float(weather_row.get("cloud_cover")),
+                "current_source": "openmeteo_near_real_time_estimate",
+                "current_output_basis": "near-real-time estimate from current Open-Meteo weather and irradiance, not plant telemetry",
+                "satellite_data_available": bool(source_status["satellite_data_available"]),
+            }
+        )
+
+    primary_id = _primary_site_id(config)
+    selected = next((row for row in rows if row["site_id"] == primary_id), rows[0] if rows else None)
+    return {
+        "timestamp": issue_time.isoformat(),
+        "primary_site_id": primary_id,
+        "primary_site_name": _site_name(config, primary_id),
+        "sites": rows,
+        "selected_site": selected,
+    }
 
 
 def build_live_inference_frame(
@@ -244,6 +327,31 @@ def _nearest_weather_row(weather: pd.DataFrame, target_time: pd.Timestamp) -> pd
     return frame.loc[idx]
 
 
+def _current_ghi(weather_row: pd.Series, geometry: pd.Series) -> float:
+    """Estimate current GHI from live weather inputs with a physical fallback."""
+    shortwave = _as_float(weather_row.get("shortwave_radiation"))
+    if shortwave is not None:
+        return max(shortwave, 0.0)
+    cloud_cover = _as_float(weather_row.get("cloud_cover")) or 0.0
+    cloud_fraction = np.clip(cloud_cover / 100.0, 0.0, 1.0)
+    t_cloud = np.clip(1.0 - 0.75 * cloud_fraction**1.5, 0.05, 1.0)
+    return max(float(geometry["target_GHI_clear"]) * float(t_cloud), 0.0)
+
+
+def _current_dni(weather_row: pd.Series, ghi: float, cos_zenith: float) -> float:
+    """Estimate current DNI using direct normal irradiance when available or pvlib fallback."""
+    dni = _as_float(weather_row.get("direct_normal_irradiance"))
+    if dni is not None:
+        return max(dni, 0.0)
+    if cos_zenith <= 0.0 or ghi <= 0.0:
+        return 0.0
+    direct_horizontal = _as_float(weather_row.get("direct_radiation"))
+    if direct_horizontal is not None:
+        return max(direct_horizontal / max(cos_zenith, 0.08), 0.0)
+    erbs = pvlib.irradiance.erbs(ghi=pd.Series([ghi]), zenith=pd.Series([np.degrees(np.arccos(np.clip(cos_zenith, 0.0, 1.0)))]), datetime_or_doy=pd.DatetimeIndex([pd.Timestamp.now(tz=TARGET_TIMEZONE)]))
+    return max(float(erbs["dni"].iloc[0]), 0.0)
+
+
 def _target_solar_features(times: pd.Series, site: dict[str, Any]) -> pd.DataFrame:
     """Compute target-time solar geometry and clear-sky irradiance for one site."""
     geometry = compute_solar_geometry(times, float(site["latitude"]), float(site["longitude"]), float(site.get("altitude", 520)), TARGET_TIMEZONE)
@@ -271,6 +379,28 @@ def _load_issue_templates(root: Path) -> pd.DataFrame:
     if path.exists():
         return pd.read_csv(path).sort_values("timestamp").groupby("site_id", as_index=False).tail(1)
     raise RuntimeError("No supervised template data is available for live inference.")
+
+
+def _primary_site_id(config: dict[str, Any]) -> str:
+    """Return the configured primary site id for cockpit presentation."""
+    return str(config.get("product", {}).get("primary_site_id", config.get("sites", [{}])[0].get("id", "munich_centre")))
+
+
+def _site_name(config: dict[str, Any], site_id: str) -> str:
+    """Return a configured site name for a site id."""
+    for site in config.get("sites", []):
+        if site["id"] == site_id:
+            return str(site["name"])
+    return site_id
+
+
+def _as_float(value: Any) -> float | None:
+    """Convert a scalar to float when possible."""
+    try:
+        number = pd.to_numeric(value, errors="coerce")
+    except Exception:
+        return None
+    return None if pd.isna(number) else float(number)
 
 
 def _template_for_site(templates: pd.DataFrame, site_id: str) -> pd.Series:

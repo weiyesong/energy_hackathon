@@ -4,7 +4,7 @@
   "satellite_data_available": false,
   "fallback_active": true,
   "nasa_power_context_available": true,
-  "data_freshness_minutes": 75.71017465,
+  "data_freshness_minutes": 111.88441223333332,
   "data_quality_level": "fallback",
   "source_resolution_minutes": 60,
   "high_frequency_horizons": {
@@ -66,7 +66,7 @@
       "error_message": null
     }
   ],
-  "inspected_at": "2026-06-13T06:57:22.870955+00:00",
+  "inspected_at": "2026-06-13T07:33:33.325213+00:00",
   "demo_mode": true,
   "display_mode": "Demo Snapshot",
   "note": "Demo source status describes cached data used for reproducible presentation, not a live source check."

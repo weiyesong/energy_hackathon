@@ -1,0 +1,85 @@
+{
+  "timestamp": "2026-06-13T09:00:00+02:00",
+  "primary_site_id": "munich_centre",
+  "primary_site_name": "Munich Centre",
+  "sites": [
+    {
+      "site_id": "munich_centre",
+      "site_name": "Munich Centre",
+      "timestamp": "2026-06-13T09:00:00+02:00",
+      "current_ghi": 266.0,
+      "current_poa": 240.22400537393577,
+      "current_pv_output": 0.20696657909071944,
+      "current_module_temperature": 25.70700016793549,
+      "current_cloud_cover": 100.0,
+      "current_source": "openmeteo_near_real_time_estimate",
+      "current_output_basis": "near-real-time estimate from current Open-Meteo weather and irradiance, not plant telemetry",
+      "satellite_data_available": false
+    },
+    {
+      "site_id": "munich_north",
+      "site_name": "Munich North",
+      "timestamp": "2026-06-13T09:00:00+02:00",
+      "current_ghi": 266.0,
+      "current_poa": 240.33462779382626,
+      "current_pv_output": 0.20705901523650894,
+      "current_module_temperature": 25.71045711855707,
+      "current_cloud_cover": 100.0,
+      "current_source": "openmeteo_near_real_time_estimate",
+      "current_output_basis": "near-real-time estimate from current Open-Meteo weather and irradiance, not plant telemetry",
+      "satellite_data_available": false
+    },
+    {
+      "site_id": "munich_east",
+      "site_name": "Munich East",
+      "timestamp": "2026-06-13T09:00:00+02:00",
+      "current_ghi": 266.0,
+      "current_poa": 240.40816955452917,
+      "current_pv_output": 0.20712046530341588,
+      "current_module_temperature": 25.712755298579037,
+      "current_cloud_cover": 100.0,
+      "current_source": "openmeteo_near_real_time_estimate",
+      "current_output_basis": "near-real-time estimate from current Open-Meteo weather and irradiance, not plant telemetry",
+      "satellite_data_available": false
+    },
+    {
+      "site_id": "munich_south",
+      "site_name": "Munich South",
+      "timestamp": "2026-06-13T09:00:00+02:00",
+      "current_ghi": 266.0,
+      "current_poa": 240.10773120050283,
+      "current_pv_output": 0.2068694174877479,
+      "current_module_temperature": 25.703366600015713,
+      "current_cloud_cover": 100.0,
+      "current_source": "openmeteo_near_real_time_estimate",
+      "current_output_basis": "near-real-time estimate from current Open-Meteo weather and irradiance, not plant telemetry",
+      "satellite_data_available": false
+    },
+    {
+      "site_id": "munich_west",
+      "site_name": "Munich West",
+      "timestamp": "2026-06-13T09:00:00+02:00",
+      "current_ghi": 266.0,
+      "current_poa": 240.0022257907179,
+      "current_pv_output": 0.2067812520055169,
+      "current_module_temperature": 25.700069555959935,
+      "current_cloud_cover": 100.0,
+      "current_source": "openmeteo_near_real_time_estimate",
+      "current_output_basis": "near-real-time estimate from current Open-Meteo weather and irradiance, not plant telemetry",
+      "satellite_data_available": false
+    }
+  ],
+  "selected_site": {
+    "site_id": "munich_centre",
+    "site_name": "Munich Centre",
+    "timestamp": "2026-06-13T09:00:00+02:00",
+    "current_ghi": 266.0,
+    "current_poa": 240.22400537393577,
+    "current_pv_output": 0.20696657909071944,
+    "current_module_temperature": 25.70700016793549,
+    "current_cloud_cover": 100.0,
+    "current_source": "openmeteo_near_real_time_estimate",
+    "current_output_basis": "near-real-time estimate from current Open-Meteo weather and irradiance, not plant telemetry",
+    "satellite_data_available": false
+  }
+}

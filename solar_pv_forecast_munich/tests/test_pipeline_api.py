@@ -30,6 +30,8 @@ def test_api_endpoints_return_expected_shapes() -> None:
     overview = client.get("/api/overview")
     assert overview.status_code == 200
     assert "primary_satellite_source" in overview.json()
+    assert "selected_site_id" in overview.json()
+    assert "current_output_basis" in overview.json()
     assert "evaluation_mode" in client.get("/api/benchmark").json()
     assert client.get("/api/forecast").status_code == 200
     assert client.get("/api/sites").status_code == 200
@@ -45,6 +47,7 @@ def test_forecast_endpoint_contains_ui_fields() -> None:
 
     assert points
     required = {
+        "site_id",
         "target_time",
         "horizon_minutes",
         "GHI_P10",

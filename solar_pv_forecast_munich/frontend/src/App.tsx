@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Activity, AlertTriangle, BarChart3, BatteryCharging, Database, Gauge, MapPinned, RadioTower, Satellite, Zap } from 'lucide-react';
 import { loadDashboardData } from './api';
@@ -57,6 +57,10 @@ function App() {
           })}
         </nav>
         <div className="sourceStack">
+          <span>Cockpit site</span>
+          <strong>{data.overview.selected_site_name}</strong>
+          <small>{data.overview.current_output_basis}</small>
+          <div className="sourceDivider" />
           <span>Active source</span>
           <strong>{sourceLabel(data.overview.primary_satellite_source)}</strong>
           <small>{data.overview.satellite_data_available ? 'satellite available' : 'fallback active'}</small>
@@ -85,18 +89,19 @@ function App() {
 }
 
 function ForecastCockpit({ data }: { data: DashboardData }) {
-  const operational = operationalPoints(data.forecast);
-  const action = data.overview.recommended_action ?? data.actions[0] ?? null;
+  const selectedSiteId = data.overview.selected_site_id;
+  const selectedForecast = operationalPoints(data.forecast.filter((point) => point.site_id === selectedSiteId));
+  const action = data.overview.recommended_action ?? data.actions.find((item) => item.site_id === selectedSiteId) ?? data.actions[0] ?? null;
   return (
     <div className="viewGrid cockpitGrid">
       <section className="kpiStrip">
-        <Kpi title="Current PV Output" value={formatKw(data.overview.current_pv_output)} icon={<Zap size={18} />} />
+        <Kpi title={`Current PV Output · ${data.overview.selected_site_name}`} value={formatKw(data.overview.current_pv_output)} detail={shortDateTime(data.overview.current_output_time)} icon={<Zap size={18} />} />
         <Kpi title="Next Peak" value={formatKw(data.overview.next_peak_power)} detail={shortDateTime(data.overview.next_peak_time)} icon={<BarChart3 size={18} />} />
         <Kpi title="Expected Energy Today" value={formatKwh(data.overview.expected_daily_energy)} icon={<BatteryCharging size={18} />} />
         <Kpi title="Forecast Risk" value={data.overview.forecast_risk} tone={riskClass(data.overview.forecast_risk)} icon={<AlertTriangle size={18} />} />
         <Kpi title="Skill vs Persistence" value={formatPercent(data.overview.forecast_skill_vs_persistence)} icon={<Gauge size={18} />} />
       </section>
-      <ForecastChart forecast={operational} overview={data.overview} action={action} />
+      <ForecastChart forecast={selectedForecast} overview={data.overview} action={action} />
       <MunichMap sites={data.sites} forecast={data.forecast} overview={data.overview} />
       <RecommendationCard action={action} overview={data.overview} />
     </div>
@@ -104,7 +109,8 @@ function ForecastCockpit({ data }: { data: DashboardData }) {
 }
 
 function MultiHorizon({ data }: { data: DashboardData }) {
-  const horizons = byHorizon(data.forecast);
+  const selectedSiteId = data.overview.selected_site_id;
+  const horizons = byHorizon(data.forecast.filter((point) => point.site_id === selectedSiteId));
   return (
     <div className="viewGrid horizonGrid">
       {horizons.map((point) => {
@@ -114,7 +120,7 @@ function MultiHorizon({ data }: { data: DashboardData }) {
             <div className="horizonTop">
               <div>
                 <p className="eyebrow">{horizonBand(point.horizon_minutes)}</p>
-                <h2>{horizonLabel(point.horizon_minutes)}</h2>
+                <h2>{horizonLabel(point.horizon_minutes)} · {data.overview.selected_site_name}</h2>
               </div>
               <span className={unsupported ? 'availability off' : 'availability on'}>{unsupported ? 'Not operationally available' : 'Operational'}</span>
             </div>
@@ -262,6 +268,7 @@ function RecommendationCard({ action, overview }: { action: OperatorAction | nul
     <section className="panel recommendation">
       <p className="eyebrow">Operator recommendation</p>
       <h2>{action.action_type.replaceAll('_', ' ')}</h2>
+      <p className="recommendationMeta">Cockpit site: {overview.selected_site_name}. Current output is a near-real-time estimate, not plant telemetry.</p>
       <dl>
         <div><dt>Expected event</dt><dd>{overview.next_expected_pv_drop ? `PV drop around ${shortDateTime(overview.next_expected_pv_drop.time)}` : action.reason}</dd></div>
         <div><dt>Operational impact</dt><dd>{action.reason}</dd></div>
@@ -304,6 +311,7 @@ function sourceName(id: string) {
   if (id === 'openmeteo') return 'Open-Meteo';
   return id.replaceAll('_', ' ');
 }
+
 
 function statusClass(status: string, manual: boolean, fallback: boolean) {
   if (manual || status === 'unavailable') return 'unavailable';

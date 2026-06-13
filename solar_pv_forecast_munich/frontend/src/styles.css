@@ -122,6 +122,12 @@ nav button:hover {
   color: var(--orange);
 }
 
+.sourceDivider {
+  height: 1px;
+  margin: 12px 0;
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .mainStage {
   padding: 26px 28px 30px;
   overflow: hidden;
@@ -488,6 +494,13 @@ h2 {
 .recommendation h2 {
   text-transform: capitalize;
   font-size: 22px;
+  margin-bottom: 10px;
+}
+
+.recommendationMeta {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
   margin-bottom: 10px;
 }
 

@@ -3,6 +3,8 @@ export type ViewKey = 'cockpit' | 'horizons' | 'sites' | 'model';
 export type Overview = {
   region: string;
   current_pv_output: number;
+  current_output_time: string | null;
+  current_output_basis: string;
   next_peak_time: string | null;
   next_peak_power: number;
   expected_daily_energy: number;
@@ -12,10 +14,13 @@ export type Overview = {
   satellite_data_available: boolean;
   next_expected_pv_drop: { time: string; drop_fraction: number } | null;
   recommended_action: OperatorAction | null;
+  selected_site_id: string;
+  selected_site_name: string;
   demo_mode: boolean;
 };
 
 export type ForecastPoint = {
+  site_id: string | null;
   target_time: string | null;
   horizon_minutes: number | null;
   GHI_P10: number | null;

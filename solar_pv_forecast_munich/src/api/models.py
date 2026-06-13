@@ -20,6 +20,8 @@ class OverviewResponse(BaseModel):
 
     region: str
     current_pv_output: float
+    current_output_time: str | None
+    current_output_basis: str
     next_peak_time: str | None
     next_peak_power: float
     expected_daily_energy: float
@@ -29,12 +31,15 @@ class OverviewResponse(BaseModel):
     satellite_data_available: bool
     next_expected_pv_drop: dict[str, Any] | None
     recommended_action: dict[str, Any] | None
+    selected_site_id: str
+    selected_site_name: str
     demo_mode: bool
 
 
 class ForecastPoint(BaseModel):
     """One forecast time-series point."""
 
+    site_id: str | None = None
     target_time: str | None
     horizon_minutes: int | None
     GHI_P10: float | None

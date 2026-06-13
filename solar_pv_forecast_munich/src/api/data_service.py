@@ -9,6 +9,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -80,15 +81,63 @@ class SolarOpsDataService:
             payload = {"sources": [_registry_entry_to_source(name, entry) for name, entry in payload.items()]}
         return payload
 
+    def load_config(self) -> dict[str, Any]:
+        """Load config.yaml for product metadata such as the primary site."""
+        path = self.project_root / "config.yaml"
+        if not path.exists():
+            return {}
+        with path.open("r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+
+    def primary_site(self) -> tuple[str, str]:
+        """Return the configured primary cockpit site id and name."""
+        config = self.load_config()
+        site_id = str(config.get("product", {}).get("primary_site_id", "munich_centre"))
+        for site in config.get("sites", []):
+            if str(site.get("id")) == site_id:
+                return site_id, str(site.get("name", site_id))
+        return site_id, site_id
+
+    def load_current_state(self) -> dict[str, Any]:
+        """Load live current-state estimation, with a safe fallback derived from forecast rows."""
+        path = self.project_root / "outputs/live/current_state.json"
+        if path.exists():
+            with path.open("r", encoding="utf-8") as f:
+                return json.load(f)
+        site_id, site_name = self.primary_site()
+        forecast = self.load_forecast()
+        site_forecast = forecast[forecast["site_id"].astype(str) == site_id] if not forecast.empty and "site_id" in forecast.columns else forecast
+        operational = site_forecast[site_forecast.get("operational_status", pd.Series("Operational", index=site_forecast.index)).astype(str) == "Operational"].copy()
+        if operational.empty:
+            return {"primary_site_id": site_id, "primary_site_name": site_name, "selected_site": None, "sites": []}
+        row = operational.sort_values("target_valid_time").iloc[0]
+        return {
+            "primary_site_id": site_id,
+            "primary_site_name": site_name,
+            "selected_site": {
+                "site_id": site_id,
+                "site_name": site_name,
+                "timestamp": row.get("target_valid_time"),
+                "current_pv_output": _float(row.get("PV_P50")),
+                "current_source": "forecast_fallback",
+                "current_output_basis": "fallback estimate from nearest operational forecast row, not plant telemetry",
+            },
+            "sites": [],
+        }
+
     def overview(self) -> dict[str, Any]:
         """Build dashboard overview fields."""
         forecast = self.load_forecast()
         actions = self.load_actions()
         sources = self.load_source_status()
+        current_state = self.load_current_state()
+        primary_site_id, primary_site_name = self.primary_site()
         if forecast.empty:
             return {
                 "region": "Munich",
                 "current_pv_output": 0.0,
+                "current_output_time": None,
+                "current_output_basis": "No live current-state estimate available",
                 "next_peak_time": None,
                 "next_peak_power": 0.0,
                 "expected_daily_energy": 0.0,
@@ -98,28 +147,40 @@ class SolarOpsDataService:
                 "satellite_data_available": bool(sources.get("satellite_data_available", False)),
                 "next_expected_pv_drop": None,
                 "recommended_action": actions[0] if actions else None,
+                "selected_site_id": primary_site_id,
+                "selected_site_name": primary_site_name,
                 "demo_mode": self.demo_mode(),
             }
 
         times = pd.to_datetime(forecast["target_valid_time"], utc=True, errors="coerce")
         ordered = forecast.assign(_time=times).sort_values("_time")
-        first = ordered.iloc[0]
-        peak_idx = pd.to_numeric(ordered["PV_P50"], errors="coerce").idxmax()
-        peak = ordered.loc[peak_idx]
-        expected_daily_energy = float(pd.to_numeric(ordered["PV_energy_P50"], errors="coerce").fillna(0.0).sum())
+        site_forecast = ordered[ordered["site_id"].astype(str) == primary_site_id].copy() if "site_id" in ordered.columns else ordered.copy()
+        if site_forecast.empty:
+            site_forecast = ordered.copy()
+        operational = site_forecast[site_forecast.get("operational_status", pd.Series("Operational", index=site_forecast.index)).astype(str) == "Operational"].copy()
+        reference = operational.iloc[0] if not operational.empty else site_forecast.iloc[0]
+        peak_idx = pd.to_numeric(operational["PV_P50"], errors="coerce").idxmax() if not operational.empty else pd.to_numeric(site_forecast["PV_P50"], errors="coerce").idxmax()
+        peak = (operational if not operational.empty else site_forecast).loc[peak_idx]
+        expected_daily_energy = float(pd.to_numeric(operational["PV_energy_P50"], errors="coerce").fillna(0.0).sum()) if not operational.empty else float(pd.to_numeric(site_forecast["PV_energy_P50"], errors="coerce").fillna(0.0).sum())
+        recommended_action = next((action for action in actions if str(action.get("site_id", "")) == primary_site_id), actions[0] if actions else None)
+        current_selected = current_state.get("selected_site") or {}
         return {
             "region": "Munich",
-            "current_pv_output": _float(first.get("PV_P50")),
+            "current_pv_output": _float(current_selected.get("current_pv_output")),
+            "current_output_time": _string_time(current_selected.get("timestamp")),
+            "current_output_basis": str(current_selected.get("current_output_basis", "near-real-time estimate")),
             "next_peak_time": _string_time(peak.get("target_valid_time")),
             "next_peak_power": _float(peak.get("PV_P50")),
             "expected_daily_energy": expected_daily_energy,
-            "forecast_risk": _forecast_risk(ordered),
+            "forecast_risk": _forecast_risk(site_forecast),
             "forecast_skill_vs_persistence": self._forecast_skill(),
-            "primary_satellite_source": str(first.get("primary_satellite_source", sources.get("primary_satellite_source", "unavailable"))),
-            "satellite_data_available": bool(first.get("satellite_data_available", sources.get("satellite_data_available", False))),
-            "next_expected_pv_drop": _next_drop(ordered),
-            "recommended_action": actions[0] if actions else None,
-            "demo_mode": bool(first.get("demo_mode", self.demo_mode())),
+            "primary_satellite_source": str(reference.get("primary_satellite_source", sources.get("primary_satellite_source", "unavailable"))),
+            "satellite_data_available": bool(reference.get("satellite_data_available", sources.get("satellite_data_available", False))),
+            "next_expected_pv_drop": _next_drop(operational if not operational.empty else site_forecast),
+            "recommended_action": recommended_action,
+            "selected_site_id": primary_site_id,
+            "selected_site_name": primary_site_name,
+            "demo_mode": bool(reference.get("demo_mode", self.demo_mode())),
         }
 
     def forecast_points(self, site_id: str | None = None) -> list[dict[str, Any]]:
@@ -178,6 +239,7 @@ def _forecast_point(row: pd.Series) -> dict[str, Any]:
     cloud_cover = _float(row.get("target_cloud_cover_forecast_proxy", row.get("cloud_cover_issue")))
     limiting = row.get("main_limiting_factor")
     return {
+        "site_id": None if pd.isna(row.get("site_id")) else str(row.get("site_id")),
         "target_time": _string_time(row.get("target_valid_time")),
         "horizon_minutes": _int(row.get("horizon_minutes")),
         "GHI_P10": _float(row.get("GHI_P10_calibrated")),

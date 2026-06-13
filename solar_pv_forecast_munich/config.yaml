@@ -9,6 +9,7 @@ product:
   name: SolarOps
   region_name: Munich
   demo_mode: false
+  primary_site_id: munich_centre
 
 data_sources:
   satellite_priority:
